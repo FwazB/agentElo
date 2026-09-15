@@ -20,7 +20,7 @@ After creating the GitHub repository, enable secret scanning/push protection and
 
 ## Application boundary
 
-The website accepts only approved weekly aggregates. The server derives ownership from a hashed recovery credential, uses parameterized SQL and atomic match transactions, and controls rating changes. Same-origin checks protect cookie-authenticated writes. The public MCP provides two reference tools with no account, evidence-upload, file, or arbitrary-URL access. Keep service credentials in server environment variables, never `NEXT_PUBLIC_*` variables.
+Accepted assessment payloads contain weekly aggregates and optional fixed AI product/context-source labels, never the underlying chat, profile, memory or activity. The server derives ownership from a hashed recovery credential, uses parameterized SQL and atomic match transactions, and controls rating changes. Same-origin checks protect cookie-authenticated writes. The public MCP provides two reference tools with no account, evidence-upload, file, or arbitrary-URL access. Keep service credentials in server environment variables, never `NEXT_PUBLIC_*` variables.
 
 Recovery keys are long-lived bearer credentials. Rotation revokes the old key; browser sign-out only clears that browser. Scores are self-attested and free accounts are not proof of a unique person. Content fingerprints are integrity checks, not signatures or anti-cheat guarantees.
 

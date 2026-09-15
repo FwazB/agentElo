@@ -6,7 +6,9 @@ A weekly computer-use game: choose a username, ask your own AI to rate your week
 
 **Computer Form** is a 1–1000 assessment of one week. **Elo** starts at 1200 and changes through eligible matches. Coverage and certainty are separate; low-confidence matches are exhibitions. Scores are self-attested. Fingerprints check content integrity, not the truth of private evidence.
 
-Private history stays with the user's assistant. The site accepts only the completed UTC week, aggregate score, coverage and certainty after an explicit preview/publish step. The optional public MCP exposes the guide and prompt, with no account or history access. Without enough evidence, the assistant asks for missing examples and returns no score.
+The prompt requests a direct estimate from existing authorized context, without follow-up questions. Meaningful partial context about the completed UTC week can support a rough score with conservative confidence. With no usable weekly context, it returns no score instead of inventing one.
+
+Private history stays with the user's assistant. After an explicit preview/publish step, the site accepts the week, aggregate score, coverage and certainty, plus optional fixed labels for the AI product and context source. The labels reveal categories, not the underlying chat, memory, profile or activity. The optional public MCP exposes the guide and prompt, with no account or history access.
 
 ## AntiSlop direction
 

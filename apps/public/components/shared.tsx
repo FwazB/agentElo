@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
+import { AI_SYSTEMS, CONTEXT_SOURCES, type AssessmentContext } from "../../../packages/public-api/assessment-context";
 import type { EloMode, MatchReceipt, PlayerReceipt } from "../../../packages/public-api/types";
 
 export const playerLabel = (username?: string | null) => username ? `@${username}` : "Player";
@@ -47,6 +48,12 @@ export function Footer({ onConnect }: { onConnect?: () => void } = {}) {
 
 export function ModeSwitch({ mode, onChange }: { mode: EloMode; onChange: (mode: EloMode) => void }) {
   return <details className="mode-details"><summary>{mode === "scalar" ? "Elo" : "Win / loss Elo"}<span aria-hidden="true">⌄</span></summary><div className="mode-panel"><p>Choose a rating mode</p><div className="mode-switch" aria-label="Rating mode"><button type="button" aria-pressed={mode === "scalar"} onClick={() => onChange("scalar")}>Elo <span>Form difference</span></button><button type="button" aria-pressed={mode === "binary"} onClick={() => onChange("binary")}>Win / loss <span>Form ordering</span></button></div><p>Each mode has its own rating.</p></div></details>;
+}
+
+export function AssessmentContextCaption({ context }: { context?: AssessmentContext | null }) {
+  if (!context) return null;
+  const label = (labels: Record<string, string>, value: unknown) => typeof value === "string" && Object.hasOwn(labels, value) ? labels[value] : labels.unknown;
+  return <p className="caption assessment-context-caption">AI: {label(AI_SYSTEMS, context.aiSystem)} · Context: {label(CONTEXT_SOURCES, context.contextSource)}</p>;
 }
 
 export function ShareActions({ username, receipt, url }: { username: string | null; receipt: PlayerReceipt | null; url: string }) {
