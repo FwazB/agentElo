@@ -4,11 +4,13 @@ On-demand PvP for demonstrated work. Bring evidence from your last seven days,
 challenge a friend or someone in the arena, and compare both entries with the
 same shared referee. AI assistance is welcome.
 
-[Current deployment](https://computer-elo.vercel.app) · [Product direction](docs/antislop-direction.md) · [Operations](docs/antislop-operations.md) · [Security](SECURITY.md)
+[Website](https://antislop.org) · [Product direction](docs/antislop-direction.md) · [Operations](docs/antislop-operations.md) · [Security](SECURITY.md)
 
 **Shared-referee pilot:** every AntiSlop result has `ratingEligible: false`.
 Duels do not change Elo. Human calibration is still required before a separate
 ranked season. The referee cannot certify truth, authorship or the absence of AI slop.
+
+## Play
 
 Prepare and preview as a guest: no sign-in or recovery key is required. Choose
 your public player name when ready to submit; the browser keeps your session.
@@ -17,30 +19,51 @@ Recovery for an existing account remains optional.
 1. Copy a preparation prompt with a rolling seven-day window.
 2. Ask your own AI to prepare a draft from existing authorized context.
 3. Preview it locally and review every excerpt.
-4. Choose your player name and approve referee processing.
-5. Opt in to public challenges, duel on demand, and share the structured result.
+4. Choose your player name, approve referee processing and public challenges, then submit.
+5. Challenge a friend or someone in the arena. Copy the duel link or download the result card.
+
+The referee compares the same entries in both A/B and B/A order, without account
+names, personal scores or Elo. Both orders must agree for a win or draw; missing
+evidence or disagreement produces an unrated result. Play on demand with evidence
+from the rolling seven-day window. Entries remain available for new duels for
+24 hours after their window ends; the pilot allows up to 10 duels per player per UTC day.
 
 Public challenge consent covers player metadata and duel outcomes. Optional
-public summary text requires separate approval. Private evidence and referee
-explanations are not included in opponent or public views. Preparation, result
+public summary text requires separate approval. Approved evidence is uploaded
+privately for the referee. Public views show approved summaries, current player
+stats, verdicts and generic reasons; they exclude private evidence and private
+referee explanations. Preparation, result
 and account modals share one page; `/challenge/<entryId>` and `/duel/<duelId>`
 open the corresponding state.
 
-The canonical release domain is `antislop.org`, attached to the existing
-`computer-elo` Vercel project. DNS cutover is a separate release step; see
-[operations](docs/antislop-operations.md).
+## Scores on the results screen
+
+| Display | Meaning |
+| --- | --- |
+| Form **/100** | The player's personal AI assessment, displayed on the AntiSlop main panel, duel results and duel share cards. A saved score of 842 becomes **84.2/100**. |
+| Elo **1200** | A separate competitive rating with a starting value of 1200 and no denominator. The shared-referee pilot does not change it. |
+| Win, loss, draw or unrated | The shared referee's comparison of the two submitted entries. Personal Form and Elo are hidden from the referee. |
+
+Form and Elo on duel results are **current public player stats**, so they can
+change after a duel. The recorded verdict remains fixed. Players without a Form
+score see “Not scored yet” on the duel card.
 
 ## Personal Form
 
-[Personal scoring guide](https://computer-elo.vercel.app/rate.md)
+[Personal scoring guide](https://antislop.org/rate.md)
 
-**Computer Form** is a 1–1000 assessment of one week. **Elo** starts at 1200 and changes through eligible matches. Coverage and certainty are separate; low-confidence matches are exhibitions. Scores are self-attested. Fingerprints check content integrity, not the truth of private evidence.
+**Computer Form** assesses one completed UTC week. Its scoring guide, legacy
+dialogs and stored receipts retain the original **/1000** scale; AntiSlop divides
+that score by 10 for its **/100** display. Coverage and certainty are separate.
+Legacy eligible matches can change Elo; low-confidence matches are exhibitions.
+Scores are self-attested. Fingerprints check content integrity, not the truth of private evidence.
 
 The prompt requests a direct estimate from existing authorized context, without follow-up questions. Meaningful partial context about the completed UTC week can support a rough score with conservative confidence. With no usable weekly context, it returns no score instead of inventing one.
 
 Private history stays with the user's assistant. After an explicit preview/publish step, the site accepts the week, aggregate score, coverage and certainty, plus optional fixed labels for the AI product and context source. The labels reveal categories, not the underlying chat, memory, profile or activity. The optional public MCP exposes the guide and prompt, with no account or history access.
 
-Personal Form remains available through **Open my Form** and `/form`. The shared
+Personal Form remains available through **Open my Form**, the **Computer Form**
+footer link and `/form`. The shared
 referee never uses these personal scores or existing Elo ratings. The legacy
 scoring rules and receipts retain their original meaning.
 
