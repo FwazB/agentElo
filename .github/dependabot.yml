@@ -7,9 +7,10 @@ updates:
       - /scripts/public-kit
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    # Keep routine dependency PRs and their branches disabled.
+    open-pull-requests-limit: 0
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
