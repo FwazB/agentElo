@@ -21,7 +21,7 @@
     "ipaddr.js": "^2.5.0"
   },
   "devDependencies": {
-    "@types/node": "^26.4.0",
+    "@types/node": "^26.5.1",
     "esbuild": "^0.28.2",
     "railway": "^3.11.0",
     "tsx": "^4.23.12",
