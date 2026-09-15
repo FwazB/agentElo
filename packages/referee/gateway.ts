@@ -41,7 +41,7 @@ export async function runGatewayPacket(packet: JudgePacket, options: { token: st
       body: JSON.stringify({
         model: LIVE_JUDGE_CONFIG.modelSnapshot, temperature: 0, max_tokens: LIVE_JUDGE_CONFIG.maxOutputTokens,
         messages: packet.request.messages, stream: false,
-        providerOptions: { gateway: { only: ["alibaba"] } },
+        providerOptions: { gateway: { only: ["alibaba"], zeroDataRetention: true } },
         response_format: { type: "json_schema", json_schema: { name: "antislop_verdict_v1", strict: true, schema: VERDICT_SCHEMA } },
       }),
     });

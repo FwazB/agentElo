@@ -65,6 +65,8 @@ export function League({ initialDialog, initialProfile, surface = "legacy", init
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [eraseConfirmation, setEraseConfirmation] = useState(false);
+  const [privateDataRevision, setPrivateDataRevision] = useState(0);
   const [dialog, setDialog] = useState<DialogView | null>(initialProfile ? "profile" : initialDialog ?? null);
   const [profileTarget, setProfileTarget] = useState<ProfileTarget | null>(initialProfile ?? null);
   const [recoveryKey, setRecoveryKey] = useState("");
@@ -94,6 +96,7 @@ export function League({ initialDialog, initialProfile, surface = "legacy", init
   navigationBlockedRef.current = dialog === "key" || busy !== null;
   const dialogIsOpen = dialog !== null;
 
+  useEffect(() => { if (dialog !== "account") setEraseConfirmation(false); }, [dialog]);
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -166,6 +169,7 @@ export function League({ initialDialog, initialProfile, surface = "legacy", init
 
   const queueKey = me?.queue.map(item => `${item.mode}:${item.weekId}`).join("|") ?? "";
   const accountId = me?.player.id;
+  useEffect(() => setEraseConfirmation(false), [accountId]);
   useEffect(() => {
     if (!queueKey) return;
     let alive = true;
@@ -207,10 +211,12 @@ export function League({ initialDialog, initialProfile, surface = "legacy", init
 
   function openDialog(view: DialogView) {
     if (dialog === "key" || busy) return;
+    setEraseConfirmation(false);
     setActionError(null); setDialog(view);
   }
   function closeDialog() {
     if (dialog === "key" || busy) return;
+    setEraseConfirmation(false);
     setDialog(null); setActionError(null);
     if (window.location.hash && window.location.hash !== "#leaderboard") window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
   }
@@ -278,6 +284,21 @@ export function League({ initialDialog, initialProfile, surface = "legacy", init
     try { await api("/session", { method: "DELETE" }); draftReadRef.current++; commitMe(null); setDialog(null); setPreview(null); setAssessmentPreview(null); setInsufficientEvidence(null); setAssessmentText(""); setUsername(""); setRecoveryKey(""); setKeyAttempted(false); setSaved(false); setFeedback(null); }
     catch (error) { setActionError(message(error)); }
     finally { setBusy(null); }
+  }
+  async function erasePrivateRecaps() {
+    if (!me || !eraseConfirmation || busy) return;
+    const epoch = sessionEpochRef.current;
+    setBusy("erase-private"); setActionError(null); setFeedback(null);
+    try {
+      const result = await api<{ erased: boolean }>("/antislop/privacy/erase", { method: "POST", headers: { "X-Expected-Player-Id": me.player.id }, body: "{}" });
+      if (!mountedRef.current || epoch !== sessionEpochRef.current) return;
+      if (result.erased !== true) throw new Error("We couldn’t confirm deletion. Try again to check whether it completed.");
+      draftReadRef.current++;
+      setPrivateDataRevision(value => value + 1);
+      setAssessmentText(""); setAssessmentPreview(null); setPreview(null); setInsufficientEvidence(null); setIncludeAssessmentContext(true); setFileError(null);
+      setEraseConfirmation(false); setFeedback("Private recaps and referee explanations were deleted from AntiSlop. Your player, Form and approved public records remain.");
+    } catch (error) { if (mountedRef.current && epoch === sessionEpochRef.current) setActionError(message(error)); }
+    finally { if (mountedRef.current && epoch === sessionEpochRef.current) setBusy(null); }
   }
   async function readFile(event: ChangeEvent<HTMLInputElement>) {
     const revision = ++draftReadRef.current;
@@ -378,7 +399,7 @@ export function League({ initialDialog, initialProfile, surface = "legacy", init
   const wideDialog = dialog && ["rate", "profile", "share", "matches", "help", "connect"].includes(dialog);
 
   return <>
-    {surface === "antislop" ? <AntiSlop me={me} sessionLoading={sessionLoading} onGuestPlayer={adoptGuestPlayer} onAccount={() => openDialog("account")} onOpenForm={() => openDialog(me ? "rate" : "join")} initialChallengeId={initialChallengeId} initialDuelId={initialDuelId}/> : <>
+    {surface === "antislop" ? <AntiSlop me={me} privateDataRevision={privateDataRevision} sessionLoading={sessionLoading} onGuestPlayer={adoptGuestPlayer} onAccount={() => openDialog("account")} onOpenForm={() => openDialog(me ? "rate" : "join")} initialChallengeId={initialChallengeId} initialDuelId={initialDuelId}/> : <>
     <Header onHelp={() => openDialog("help")} onConnect={() => openDialog("connect")} onHome={() => { closeDialog(); window.scrollTo({ top: 0, behavior: scrollBehavior() }); }} action={<button className="nav-link account-link" onClick={() => me ? openDialog("account") : join()} disabled={sessionLoading}>{sessionLoading ? "One sec…" : me ? playerLabel(me.player.username) : "Let’s play"}<Arrow/></button>}/>
     <main id="main">
       <section className="hero shell" aria-labelledby="hero-title">
@@ -421,7 +442,7 @@ export function League({ initialDialog, initialProfile, surface = "legacy", init
 
         {dialog === "matches" && <><h2 id="dialog-title" tabIndex={-1}>Your matchups.</h2>{!me ? <><p>Pick a name and publish your weekly Form to play.</p><button className="button primary" onClick={join}>Let’s start <Arrow/></button></> : <><div className="match-mode-bar"><p>Form decides the result. Matchups build your Elo.</p><ModeSwitch mode={mode} onChange={setMode}/></div>{currentReceipt ? <section className="queue-panel"><div className="queue-heading"><h3>{queued ? "Looking for your other half…" : matchedThisWeek ? "You played this week!" : "Ready, player?"}</h3>{queued && <span className="loading-mark"/>}</div><p className="caption">{queued ? "Waiting for an eligible player from the same week. You can close this window and return later." : matchedThisWeek ? "Try the other mode, or bring a fresh Form next week." : "One matchup per mode each week. Joining locks this week’s Form, even if you later leave the queue."}</p>{queued ? <button className="button secondary" disabled={busy !== null} onClick={() => void queue(true)}>{busy === "queue" ? "Leaving…" : "Leave queue"}</button> : !matchedThisWeek ? <button className="button primary" disabled={busy !== null} onClick={() => void queue()}>{busy === "queue" ? "Joining…" : "Join a matchup"}<Arrow/></button> : null}</section> : <div className="empty-state compact"><h3>First, bring this week’s Form.</h3><p>A published score is your ticket to the matchup.</p><button className="button primary" onClick={() => openDialog("rate")}>Rate this week <Arrow/></button></div>}<div className="your-matches"><h3>Your matchups</h3><MatchList matches={me.matches.filter(match => match.mode === mode)} playerId={me.player.id} usernames={me.usernames} onOpenProfile={openProfile}/></div></>}</>}
 
-        {dialog === "account" && <><h2 id="dialog-title" tabIndex={-1}>{me?.player.username ? `hey, @${me.player.username}.` : "your player."}</h2>{!me ? <><p>Your next good week needs a player name.</p><button className="button primary" onClick={join}>Join the club <Arrow/></button></> : <>{needsUsername ? usernameForm : <div className="account-menu"><button className="button primary" onClick={() => openDialog("rate")}>Rate my week <Arrow/></button><button className="button secondary" onClick={() => openDialog("share")}>My scorecard</button><button className="text-link" onClick={() => openProfile({ id: me.player.id, username: me.player.username ?? undefined })}>My public profile <Arrow diagonal/></button></div>}<details className="account-details"><summary>Recovery key & sign out</summary><p className="caption">Your recovery key is your sign-in. Save the replacement before you confirm; the old key then stops working.</p><div className="button-row"><button className="button secondary small" disabled={busy !== null} onClick={() => prepareKey("rotate")}>Replace recovery key</button><button className="text-link" disabled={busy !== null} onClick={() => void signOut()}>{busy === "signout" ? "Signing out…" : "Sign out"}</button></div></details></>}</>}
+        {dialog === "account" && <><h2 id="dialog-title" tabIndex={-1}>{me?.player.username ? `hey, @${me.player.username}.` : "your player."}</h2>{!me ? <><p>Your next good week needs a player name.</p><button className="button primary" onClick={join}>Join the club <Arrow/></button></> : <>{needsUsername ? usernameForm : <div className="account-menu"><button className="button primary" onClick={() => openDialog("rate")}>Rate my week <Arrow/></button><button className="button secondary" onClick={() => openDialog("share")}>My scorecard</button><button className="text-link" onClick={() => openProfile({ id: me.player.id, username: me.player.username ?? undefined })}>My public profile <Arrow diagonal/></button></div>}<details className="account-details"><summary>Private recaps</summary><p className="caption">New private recaps expire after 7 days; private referee explanations expire 7 days after a duel finishes.</p>{eraseConfirmation ? <div role="group" aria-labelledby="erase-private-title"><h3 id="erase-private-title">Delete all your private recaps?</h3><p className="caption">This removes your stored recaps and related referee explanations from AntiSlop and pauses your challenges. Your player, Form, approved public summaries and duel results stay. This does not delete backups or copies held by AI providers.</p><div className="button-row"><button className="button primary" disabled={busy !== null} onClick={() => void erasePrivateRecaps()}>{busy === "erase-private" ? "Deleting private recaps…" : "Delete my private recaps"}</button><button className="text-link" disabled={busy !== null} onClick={() => setEraseConfirmation(false)}>Keep my recaps</button></div></div> : <button className="button secondary" disabled={busy !== null} onClick={() => { setEraseConfirmation(true); setActionError(null); setFeedback(null); }}>Delete private recaps</button>}</details><details className="account-details"><summary>Recovery key & sign out</summary><p className="caption">Your recovery key is your sign-in. Save the replacement before you confirm; the old key then stops working.</p><div className="button-row"><button className="button secondary small" disabled={busy !== null} onClick={() => prepareKey("rotate")}>Replace recovery key</button><button className="text-link" disabled={busy !== null} onClick={() => void signOut()}>{busy === "signout" ? "Signing out…" : "Sign out"}</button></div></details></>}</>}
 
         {dialog === "help" && <><h2 id="dialog-title" tabIndex={-1}>How to play.</h2><p>Your own AI reflects on your completed week, using evidence you authorize. You decide whether to publish its score.</p><div className="help-steps"><article><span className="step-chip">1</span><h3>Ask your AI.</h3><p>It uses the context it already has to rate your week directly. No context at all? Try an existing chat that knows your work.</p></article><article><span className="step-chip">2</span><h3>Get your Form.</h3><p>Your weekly score out of 1000, plus confidence. Paste the small result, review it, and choose to publish.</p></article><article><span className="step-chip">3</span><h3>Share or play.</h3><p>Your profile is ready to share immediately. Elo starts at 1200 and changes through opted-in weekly matchups.</p></article></div><details className="rubric-details"><summary>What actually counts? <span aria-hidden="true">+</span></summary><div className="rubric-list">{RUBRIC.map(([name, description, weight]) => <div className="rubric-row" key={name}><div><h3>{name}</h3><p>{description}</p></div><strong className="mono">{weight}<span>%</span></strong></div>)}</div><p className="caption">Confidence is the lower of evidence coverage and evaluator certainty. Zero coverage or certainty means no score. Grounded scores below 50% confidence can be shared, but matchups are exhibitions with no Elo change. Scores are self-attested and evaluators may disagree; fingerprints verify receipt integrity, not whether an assessment is true. This is a self-improvement game, not a measure of intelligence, worth, or employability.</p></details><div className="modal-next-actions"><button className="button primary" onClick={join}>Okay, rate my week <Arrow/></button><button className="text-link" onClick={() => openDialog("connect")}>Connect my AI / scoring kit</button></div></>}
 

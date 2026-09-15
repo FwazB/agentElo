@@ -3,8 +3,8 @@ import { PROMPT_VERSION, RUBRIC_VERSION, type JudgeConfig } from "./judge.ts";
 /** A pilot configuration, not a claim of human calibration or provider immutability. */
 export const LIVE_JUDGE_CONFIG: JudgeConfig = Object.freeze({
   version: "antislop.judge-config.v1",
-  seasonId: "antislop-pilot-2026-09-v1",
-  provider: "vercel-gateway.alibaba.json-schema-v1",
+  seasonId: "antislop-pilot-2026-09-v2",
+  provider: "vercel-gateway.alibaba.json-schema-zdr-v1",
   modelSnapshot: "alibaba/qwen3-next-80b-a3b-instruct",
   rubricVersion: RUBRIC_VERSION,
   promptVersion: PROMPT_VERSION,

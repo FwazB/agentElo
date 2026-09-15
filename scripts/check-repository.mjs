@@ -10,7 +10,7 @@ function inspect(path, mode, oid, context) {
   if (!["100644", "100755"].includes(mode)) { failures.add(`Unsupported entry mode in ${context}: ${path}`); return; }
   if (/[\x00-\x1f\x7f]/.test(path) || path.split("/").includes("..")) { failures.add(`Unsafe filename in ${context}`); return; }
   const name = path.split("/").at(-1);
-  const forbidden = /(^|\/)(?:node_modules|\.next|\.git|\.vercel|\.railway|\.ssh|artifacts|runs|data|var|coverage)(\/|$)/.test(path)
+  const forbidden = /(^|\/)(?:node_modules|\.next|\.git|\.vercel|\.railway|\.worktrees|\.ssh|artifacts|runs|data|var|coverage)(\/|$)/.test(path)
     || name.startsWith(".env") && name !== ".env.example"
     || [".npmrc", ".git-credentials"].includes(name)
     || /(?:\.sqlite(?:.*)?|\.db(?:-.*)?|\.pem|\.key|\.p12|\.pfx|\.tsbuildinfo|\.log)$/i.test(name)

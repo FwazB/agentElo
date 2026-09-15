@@ -218,3 +218,47 @@ test("slow private uploads time out without storing an entry", async () => {
     assert.equal(app.arena.me(account.player.id).entries.length, 0);
   } finally { await app.close(); }
 });
+
+test("owner-wide privacy erasure requires exact intent and current account binding", async () => {
+  const app = await serve();
+  try {
+    const owner = app.player(), other = app.player();
+    const entry = app.arena.submitEntry(owner.player.id, submission("erase-owner", false)).entry;
+    const keep = app.arena.submitEntry(other.player.id, submission("erase-other", false)).entry;
+    const erase = (body: unknown, token?: string, expected?: string) => {
+      const init = post(body, token);
+      return app.call("/privacy/erase", { ...init, headers: { ...Object.fromEntries(new Headers(init.headers)), ...(expected === undefined ? {} : { "x-expected-player-id": expected }) } });
+    };
+    assert.equal((await erase({}, undefined, owner.player.id)).status, 401);
+    assert.equal((await erase({}, owner.token)).status, 400);
+    assert.equal((await erase({}, owner.token, "p_invalid")).status, 400);
+    assert.equal((await erase({}, other.token, owner.player.id)).status, 409);
+    const extra = await erase({ playerId: other.player.id, privateText: "PRIVATE-ERASE-CANARY" }, owner.token, owner.player.id);
+    assert.equal(extra.status, 400); assert.equal((await extra.text()).includes("PRIVATE-ERASE-CANARY"), false);
+    assert.equal(app.arena.me(owner.player.id).entries[0]!.entryId, entry.entryId);
+    for (let index = 0; index < 2; index++) {
+      const response = await erase({}, owner.token, owner.player.id);
+      assert.equal(response.status, 200); assert.deepEqual(await response.json(), { erased: true });
+    }
+    assert.equal(app.arena.me(owner.player.id).entries.length, 0);
+    assert.equal(app.arena.me(other.player.id).entries[0]!.entryId, keep.entryId);
+    assert.equal((await app.call("/entries", post(submission("erase-after"), owner.token))).status, 201, "deletion keeps the account usable");
+  } finally { await app.close(); }
+});
+
+test("privacy erasure rechecks a bearer revoked while its request is in flight", async () => {
+  const app = await serve();
+  try {
+    const account = app.player(); app.arena.submitEntry(account.player.id, submission("erase-revoked", false));
+    const started = once(app.server, "request");
+    let finish: (status: number) => void = () => {};
+    const responseStatus = new Promise<number>(resolve => { finish = resolve; });
+    const held = httpRequest(`${app.url}/v1/antislop/privacy/erase`, { method: "POST", headers: {
+      "content-type": "application/json", "content-length": 2, "x-service-key": SERVICE_KEY, "x-client-id": CLIENT_ID,
+      authorization: `Bearer ${account.token}`, "x-expected-player-id": account.player.id,
+    } }, response => { response.resume(); response.on("end", () => finish(response.statusCode!)); });
+    held.write("{"); await started;
+    app.legacy.rotateToken(account.player.id, randomBytes(32).toString("hex")); held.end("}");
+    assert.equal(await responseStatus, 401); assert.equal(app.arena.me(account.player.id).entries.length, 1);
+  } finally { await app.close(); }
+});

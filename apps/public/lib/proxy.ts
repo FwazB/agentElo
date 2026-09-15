@@ -70,7 +70,7 @@ function allowed(path: string, method: string): boolean {
     new RegExp(`^antislop/entries/${ENTRY}$`),
     new RegExp(`^antislop/duels/${DUEL}$`),
   ].some((pattern) => pattern.test(path));
-  if (method === "POST") return ["players", "username", "session", "session/rotate", "guest/session", "guest/player", "assessment", "form", "queue", "antislop/entries", "antislop/duels"].includes(path)
+  if (method === "POST") return ["players", "username", "session", "session/rotate", "guest/session", "guest/player", "assessment", "form", "queue", "antislop/entries", "antislop/duels", "antislop/privacy/erase"].includes(path)
     || new RegExp(`^antislop/entries/${ENTRY}/participation$`).test(path);
   return method === "DELETE" && ["session", "queue"].includes(path);
 }
@@ -127,9 +127,10 @@ export async function proxyApi(request: Request, segments: string[], config: Pro
     if (!queryKeys.includes(key) || url.searchParams.getAll(key).length !== 1) return json({ error: "Invalid query parameters." }, 400);
   }
   const privateEntry = path === "antislop/entries" && method === "POST";
-  const expectedPlayer = privateEntry ? request.headers.get("x-expected-player-id") : null;
-  if (privateEntry && (expectedPlayer === null || !new RegExp(`^${PLAYER}$`).test(expectedPlayer))) {
-    return json({ error: "Review this entry for your current player before uploading it." }, 400);
+  const privateMutation = privateEntry || (path === "antislop/privacy/erase" && method === "POST");
+  const expectedPlayer = privateMutation ? request.headers.get("x-expected-player-id") : null;
+  if (privateMutation && (expectedPlayer === null || !new RegExp(`^${PLAYER}$`).test(expectedPlayer))) {
+    return json({ error: "Review this action for your current player before continuing." }, 400);
   }
   if (path === "session" && method === "DELETE") return json({ ok: true }, 200, [sessionCookie("", production, true), pendingCookie("", production)]);
   if (!config.apiUrl || !config.serviceKey || config.serviceKey.length < 32) return json({ error: "The league is not connected yet. Please try again later." }, 503);
@@ -175,27 +176,27 @@ export async function proxyApi(request: Request, segments: string[], config: Pro
   const clientId = createHmac("sha256", config.serviceKey).update(clientIp.slice(0, 256)).digest("hex");
   const headers: Record<string, string> = { "X-Service-Key": config.serviceKey, "X-Client-Id": clientId };
   if (token) headers.Authorization = `Bearer ${token}`;
-  if (privateEntry && expectedPlayer) headers["X-Expected-Player-Id"] = expectedPlayer;
+  if (privateMutation && expectedPlayer) headers["X-Expected-Player-Id"] = expectedPlayer;
   if (body !== undefined && !recover) headers["Content-Type"] = "application/json";
   try {
     // A stale cookie is not proof of an existing session. Check it without
     // changing cookies: another tab may already have completed a newer login.
     const signal = AbortSignal.timeout(12_000);
-    if (privateEntry) {
+    if (privateMutation) {
       // Resolve identity with the exact captured bearer that will carry the
-      // private body. A cookie changed by another tab cannot retarget this upload.
+      // private action. Another tab cannot retarget an upload or erasure.
       const existing = await (config.fetcher ?? fetch)(new URL("/v1/me", upstream), {
         method: "GET", headers, cache: "no-store", redirect: "error", signal,
       });
       if (!existing.ok) {
         await existing.body?.cancel();
-        if (existing.status === 401) return json({ error: "Your player session changed. Review your entry again before uploading it." }, 409);
-        return json({ error: "We couldn’t verify your player. Try again before uploading your entry." }, 503);
+        if (existing.status === 401) return json({ error: "Your player session changed. Review this action again." }, 409);
+        return json({ error: "We couldn’t verify your player. Try again shortly." }, 503);
       }
       const session = await boundedJson(existing, MAX_SESSION_RESPONSE) as { player?: { id?: unknown } } | null;
       const playerId = session?.player?.id;
       if (typeof playerId !== "string" || !new RegExp(`^${PLAYER}$`).test(playerId)) throw new Error("Invalid player response");
-      if (playerId !== expectedPlayer) return json({ error: "Your player session changed. Review your entry again before uploading it." }, 409);
+      if (playerId !== expectedPlayer) return json({ error: "Your player session changed. Review this action again." }, 409);
     }
     const checkSession = async () => {
       const existing = await (config.fetcher ?? fetch)(new URL("/v1/me", upstream), {

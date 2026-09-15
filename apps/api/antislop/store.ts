@@ -9,12 +9,15 @@ import { parseEntryDraft } from "../../../packages/referee/drafts.ts";
 import { entryFingerprint, parseWorkEntry, WORK_ENTRY_VERSION, type WorkEntry } from "../../../packages/referee/entries.ts";
 import { adjudicatePair, buildJudgePacket, judgeFingerprint, parseJudgeConfig, type JudgeConfig, type Outcome } from "../../../packages/referee/judge.ts";
 import { LIVE_JUDGE_CONFIG } from "../../../packages/referee/live-config.ts";
+import { parseRefereeJson } from "../../../packages/referee/json.ts";
 import type { AntiSlopArena, AntiSlopJudgeClaim, AntiSlopLimits, AntiSlopMe, DuelPlayerStats, DuelReason, DuelState, DuelView, OwnedEntry, PublicEntry } from "../../../packages/public-api/antislop.ts";
 import { ApiError } from "../store.ts";
 
 const DAY = 86_400_000;
 const PENDING_MS = 120_000;
 const LEASE_MS = 90_000;
+const PRIVATE_RETENTION_MS = 7 * DAY;
+const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/;
 const ENTRY_ID = /^ae_[0-9a-f]{32}$/;
 const DUEL_ID = /^ad_[0-9a-f]{32}$/;
@@ -87,7 +90,7 @@ export function createAntislopStore(options: AntislopStoreOptions) {
     catch (error) { db.exec("ROLLBACK"); throw error; }
   }
   try {
-    db.exec("PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;");
+    db.exec("PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA secure_delete=ON;");
     if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='players'").get()) throw new Error("Initialize the account store before AntiSlop.");
     transaction("initializeAntislop", () => {
       db.exec(`
@@ -131,6 +134,20 @@ export function createAntislopStore(options: AntislopStoreOptions) {
         CREATE INDEX IF NOT EXISTS antislop_duels_expiry ON antislop_duels(state,expires_at);
         CREATE INDEX IF NOT EXISTS antislop_requests_day ON antislop_requests(player_id,created_at);
       `);
+      // Existing payloads have no implicit expiry. Only newly accepted private
+      // payloads receive a deadline; owner erasure also covers historical rows.
+      const columns = new Set(db.prepare("PRAGMA table_info(antislop_entries)").all().map(row => row.name));
+      for (const [name, type] of [["public_json", "TEXT"], ["public_hash", "TEXT"], ["private_expires_at", "INTEGER"], ["private_erased_at", "INTEGER"]]) {
+        if (!columns.has(name)) db.exec(`ALTER TABLE antislop_entries ADD COLUMN ${name} ${type}`);
+      }
+      if (!db.prepare("PRAGMA table_info(antislop_judge_runs)").all().some(row => row.name === "private_expires_at")) {
+        db.exec("ALTER TABLE antislop_judge_runs ADD COLUMN private_expires_at INTEGER");
+      }
+      db.exec("CREATE INDEX IF NOT EXISTS antislop_private_expiry ON antislop_entries(private_expires_at) WHERE private_erased_at IS NULL");
+      for (const row of db.prepare("SELECT * FROM antislop_entries WHERE public_json IS NULL OR public_hash IS NULL").all()) {
+        const projection = publicSnapshot(snapshot(row));
+        db.prepare("UPDATE antislop_entries SET public_json=?,public_hash=? WHERE id=?").run(JSON.stringify(projection), hash(projection), String(row.id));
+      }
       const existing = db.prepare("SELECT judge_fingerprint,config_json FROM antislop_seasons WHERE id=?").get(config.seasonId);
       if (existing && (existing.judge_fingerprint !== judgeHash || existing.config_json !== JSON.stringify(config))) throw new Error("AntiSlop season configuration changed; use a new season.");
       if (!existing) db.prepare("INSERT INTO antislop_seasons VALUES (?,?,?,?)").run(config.seasonId, judgeHash, JSON.stringify(config), time());
@@ -149,15 +166,35 @@ export function createAntislopStore(options: AntislopStoreOptions) {
     return row;
   }
   function snapshot(row: Row): WorkEntry {
-    const entry = parseWorkEntry(JSON.parse(String(row.snapshot_json)) as unknown);
+    if (row.private_erased_at !== null && row.private_erased_at !== undefined) throw new ApiError(410, "This entry's private evidence has been erased. Prepare a fresh entry.");
+    const entry = parseWorkEntry(parseRefereeJson(String(row.snapshot_json)));
     if (entry.entryId !== row.id || entry.participantId !== row.player_id || entryFingerprint(entry) !== row.fingerprint || substantiveFingerprint(entry) !== row.content_hash) throw new Error("AntiSlop entry integrity failure.");
     return entry;
   }
+  function publicSnapshot(entry: WorkEntry) {
+    return { entryId: entry.entryId, participantId: entry.participantId, window: entry.window, publicSummary: entry.publicSummary?.text ?? null };
+  }
+  function savedPublicSnapshot(row: Row): ReturnType<typeof publicSnapshot> {
+    const projection = parseRefereeJson(String(row.public_json));
+    const fail = (): never => { throw new Error("AntiSlop public entry integrity failure."); };
+    let record: Record<string, unknown>;
+    try { record = object(projection, ["entryId", "participantId", "window", "publicSummary"]); } catch { return fail(); }
+    if (record.entryId !== row.id || record.participantId !== row.player_id || hash(record) !== row.public_hash) return fail();
+    let window: Record<string, unknown>;
+    try { window = object(record.window, ["startsAt", "endsAt"]); } catch { return fail(); }
+    for (const value of [window.startsAt, window.endsAt]) {
+      if (typeof value !== "string" || value.length !== 24 || !Number.isFinite(Date.parse(value)) || new Date(value).toISOString() !== value) return fail();
+    }
+    if (Date.parse(String(window.endsAt)) - Date.parse(String(window.startsAt)) !== 7 * DAY
+      || (record.publicSummary !== null && (typeof record.publicSummary !== "string" || Buffer.byteLength(record.publicSummary) > 2000))) return fail();
+    if (row.private_erased_at === null && hash(publicSnapshot(snapshot(row))) !== row.public_hash) return fail();
+    return record as ReturnType<typeof publicSnapshot>;
+  }
   function publicEntry(row: Row): PublicEntry {
-    const entry = snapshot(row);
+    const entry = savedPublicSnapshot(row);
     return {
       entryId: entry.entryId, participantId: entry.participantId, username: player(entry.participantId).username as string | null,
-      window: entry.window, publicSummary: entry.publicSummary?.text ?? null, createdAt: iso(Number(row.created_at)), optedIn: row.opted_in === 1,
+      window: entry.window, publicSummary: entry.publicSummary, createdAt: iso(Number(row.created_at)), optedIn: row.opted_in === 1,
     };
   }
   function ownedEntry(row: Row, id: string): OwnedEntry {
@@ -165,9 +202,39 @@ export function createAntislopStore(options: AntislopStoreOptions) {
     return { ...publicEntry(row), entry: snapshot(row) };
   }
   const timeoutHash = hash({ failure: "referee_timed_out" });
-  function expire(at = time()): void {
+  function expireDuels(at: number): void {
     db.prepare(`UPDATE antislop_duels SET state='failed',outcome='unrated',reason='referee_timed_out',completed_at=?,settlement_hash=?
       WHERE state IN ('pending','judging') AND expires_at<=?`).run(at, timeoutHash, at);
+  }
+  function eraseEntryPayload(entryId: string, at: number): number {
+    db.prepare("UPDATE antislop_entry_participation SET opted_in=0 WHERE entry_id=?").run(entryId);
+    const snapshots = db.prepare("UPDATE antislop_entries SET snapshot_json='null',private_erased_at=? WHERE id=? AND private_erased_at IS NULL").run(at, entryId);
+    const verdicts = db.prepare(`UPDATE antislop_judge_runs SET verdict_json='null' WHERE verdict_json<>'null' AND duel_id IN
+      (SELECT id FROM antislop_duels WHERE a_entry=? OR b_entry=?)`).run(entryId, entryId);
+    return Number(snapshots.changes) + Number(verdicts.changes);
+  }
+  function checkpointErasure(): void {
+    // secure_delete overwrites removed live pages. Truncation is best effort:
+    // other readers, provider copies and infrastructure backups are independent.
+    try {
+      db.exec("PRAGMA busy_timeout=0");
+      db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get();
+    } catch { /* Later cleanup/connection close can checkpoint remaining WAL. */ }
+    finally { db.exec("PRAGMA busy_timeout=5000"); }
+  }
+  function expire(at = time()): void {
+    const changes = transaction("pruneAntislopEvidence", () => {
+      expireDuels(at);
+      let erased = 0;
+      const entries = db.prepare(`SELECT id FROM antislop_entries e WHERE private_erased_at IS NULL AND private_expires_at<=?
+        AND NOT EXISTS (SELECT 1 FROM antislop_duels d WHERE (d.a_entry=e.id OR d.b_entry=e.id)
+          AND d.state IN ('pending','judging') AND d.expires_at>?)`).all(at, at);
+      for (const entry of entries) erased += eraseEntryPayload(String(entry.id), at);
+      erased += Number(db.prepare(`UPDATE antislop_judge_runs SET verdict_json='null' WHERE verdict_json<>'null' AND private_expires_at<=?
+        AND duel_id IN (SELECT id FROM antislop_duels WHERE state IN ('complete','failed'))`).run(at).changes);
+      return erased;
+    });
+    if (changes > 0) checkpointErasure();
   }
   function duelRow(id: string): Row {
     const row = db.prepare("SELECT * FROM antislop_duels WHERE id=?").get(id);
@@ -209,7 +276,11 @@ export function createAntislopStore(options: AntislopStoreOptions) {
   }
   function quota(id: string, at = time()): AntiSlopMe["quota"] {
     const { day, start, end } = dayBounds(at);
-    const used = Number(db.prepare("SELECT COUNT(*) AS n FROM antislop_duels WHERE (a_player=? OR b_player=?) AND created_at>=? AND created_at<?").get(id, id, start, end)!.n);
+    // Reserve an incoming challenge while live; charge its recipient permanently
+    // only once judging was claimed. Initiators always pay for their own attempts.
+    const used = Number(db.prepare(`SELECT COUNT(*) AS n FROM antislop_duels WHERE created_at>=? AND created_at<?
+      AND (a_player=? OR (b_player=? AND (lease_hash IS NOT NULL OR (state IN ('pending','judging') AND expires_at>?))))`)
+      .get(start, end, id, id, at)!.n);
     const inFlight = Number(db.prepare("SELECT COUNT(*) AS n FROM antislop_duels WHERE (a_player=? OR b_player=?) AND state IN ('pending','judging') AND expires_at>?").get(id, id, at)!.n);
     return { day, used, remaining: Math.max(0, LIMITS.duelsPerPlayerPerDay - used), inFlight };
   }
@@ -235,8 +306,32 @@ export function createAntislopStore(options: AntislopStoreOptions) {
     if (row.claimant_id !== id || typeof row.lease_hash !== "string" || !timingSafeEqual(Buffer.from(digest(leaseToken), "hex"), Buffer.from(row.lease_hash, "hex"))) throw new ApiError(409, "The judging lease does not match this duel.");
   }
 
+  try { expire(); } catch (error) { db.close(); throw error; }
+  const cleanupTimer = setInterval(() => {
+    try { expire(); } catch { console.error("AntiSlop private evidence cleanup failed."); }
+  }, CLEANUP_INTERVAL_MS);
+  cleanupTimer.unref();
+
   return {
-    close: (): void => db.close(),
+    close: (): void => { clearInterval(cleanupTimer); db.close(); },
+    prunePrivateEvidence: (): void => expire(),
+    erasePrivateEvidence(id: string): { erased: true } {
+      const changes = transaction("eraseAntislopEvidence", () => {
+        player(id);
+        const at = time(); expireDuels(at);
+        if (db.prepare(`SELECT 1 FROM antislop_duels WHERE (a_player=? OR b_player=?)
+          AND state IN ('pending','judging') AND expires_at>?`).get(id, id, at)) {
+          throw new ApiError(409, "Wait for your active duel to finish before deleting private recaps.");
+        }
+        let erased = 0;
+        for (const entry of db.prepare("SELECT id FROM antislop_entries WHERE player_id=?").all(id)) {
+          erased += eraseEntryPayload(String(entry.id), at);
+        }
+        return erased;
+      });
+      if (changes > 0) checkpointErasure();
+      return { erased: true };
+    },
     arena(viewer?: string): AntiSlopArena {
       const at = time(); expire(at);
       const entries = db.prepare(`SELECT e.*,p.opted_in,p.approved_at FROM antislop_entries e JOIN antislop_entry_participation p ON p.entry_id=e.id
@@ -248,11 +343,12 @@ export function createAntislopStore(options: AntislopStoreOptions) {
     me(id: string): AntiSlopMe {
       player(id); expire();
       const entries = db.prepare(`SELECT e.*,p.opted_in,p.approved_at FROM antislop_entries e JOIN antislop_entry_participation p ON p.entry_id=e.id
-        WHERE e.player_id=? ORDER BY e.created_at DESC,e.id LIMIT 20`).all(id).map(row => ownedEntry(row, id));
+        WHERE e.player_id=? AND e.private_erased_at IS NULL ORDER BY e.created_at DESC,e.id LIMIT 20`).all(id).map(row => ownedEntry(row, id));
       const duels = db.prepare("SELECT * FROM antislop_duels WHERE a_player=? OR b_player=? ORDER BY created_at DESC,id DESC LIMIT 50").all(id, id).map(row => view(row, id));
       return { entries, duels, quota: quota(id) };
     },
     entry(value: unknown, viewer?: string): PublicEntry {
+      expire();
       const row = entryRow(identifier(value, ENTRY_ID));
       // Saved private entries have no public presence, even for their owner on this route.
       // Prior public challenge consent remains attached to the immutable snapshot.
@@ -275,6 +371,7 @@ export function createAntislopStore(options: AntislopStoreOptions) {
         publicSummary = { text: summary.text, approved: true };
       }
       const requestHash = hash({ draft, refereeApproved: true, publicSummary, optedIn });
+      expire();
       return transaction("submitAntislopEntry", () => {
         player(id);
         const prior = priorRequest(id, "entry", requestId, requestHash);
@@ -292,7 +389,10 @@ export function createAntislopStore(options: AntislopStoreOptions) {
         if (db.prepare("SELECT 1 FROM antislop_entries WHERE player_id=? AND content_hash=?").get(id, contentHash)) throw new ApiError(409, "This work already has an immutable entry. Use the existing entry; changing sharing text does not create a new entry.");
         const { start, end: dayEnd } = dayBounds(at);
         if (Number(db.prepare("SELECT COUNT(*) AS n FROM antislop_entries WHERE player_id=? AND created_at>=? AND created_at<?").get(id, start, dayEnd)!.n) >= 10) throw new ApiError(429, "Today's ten entry submissions are used.");
-        db.prepare("INSERT INTO antislop_entries VALUES (?,?,?,?,?,?)").run(entry.entryId, id, JSON.stringify(entry), entryFingerprint(entry), contentHash, at);
+        const projection = publicSnapshot(entry);
+        db.prepare(`INSERT INTO antislop_entries(id,player_id,snapshot_json,fingerprint,content_hash,created_at,public_json,public_hash,private_expires_at)
+          VALUES (?,?,?,?,?,?,?,?,?)`).run(entry.entryId, id, JSON.stringify(entry), entryFingerprint(entry), contentHash, at,
+          JSON.stringify(projection), hash(projection), at + PRIVATE_RETENTION_MS);
         db.prepare("INSERT INTO antislop_entry_participation VALUES (?,?,?)").run(entry.entryId, optedIn ? 1 : 0, optedIn ? at : null);
         saveRequest(id, "entry", requestId, requestHash, entry.entryId, at);
         return { created: true, entry: ownedEntry(entryRow(entry.entryId), id) };
@@ -300,6 +400,7 @@ export function createAntislopStore(options: AntislopStoreOptions) {
     },
     participation(id: string, entryId: unknown, value: unknown): PublicEntry {
       const entryIdValue = identifier(entryId, ENTRY_ID); const input = object(value, ["optedIn"]); const optedIn = bool(input.optedIn);
+      expire();
       return transaction("antislopParticipation", () => {
         player(id); const row = entryRow(entryIdValue); if (row.player_id !== id) throw new ApiError(404, "Entry not found.");
         const at = time(); if (optedIn) fresh(row, at);
@@ -345,7 +446,7 @@ export function createAntislopStore(options: AntislopStoreOptions) {
       const duelIdValue = identifier(duelId, DUEL_ID); expire();
       return transaction("claimAntislopDuel", () => {
         const row = duelRow(duelIdValue); requireParticipant(row, id);
-        if (row.state !== "pending" || row.lease_hash !== null) throw new ApiError(409, "This duel has already been claimed or finished. Refresh its result.");
+        if (row.state !== "pending" || row.lease_hash !== null || Number(row.expires_at) <= time()) throw new ApiError(409, "This duel has already been claimed or finished. Refresh its result.");
         if (row.season_id !== config.seasonId || row.judge_fingerprint !== judgeHash) throw new ApiError(409, "This duel belongs to another referee season.");
         const a = snapshot(entryRow(String(row.a_entry))), b = snapshot(entryRow(String(row.b_entry)));
         const packets = { ab: buildJudgePacket(a, b, config, "ab"), ba: buildJudgePacket(a, b, config, "ba") };
@@ -360,13 +461,15 @@ export function createAntislopStore(options: AntislopStoreOptions) {
         const row = duelRow(duelIdValue); validLease(row, id, input.leaseToken);
         if (row.judge_fingerprint !== judgeHash || row.season_id !== config.seasonId) throw new ApiError(409, "The referee configuration no longer matches this duel.");
         let result;
-        try { result = adjudicatePair(snapshot(entryRow(String(row.a_entry))), snapshot(entryRow(String(row.b_entry))), config, input.responseAB, input.responseBA); }
+        const a = snapshot(entryRow(String(row.a_entry))), b = snapshot(entryRow(String(row.b_entry)));
+        try { result = adjudicatePair(a, b, config, input.responseAB, input.responseBA); }
         catch { invalid("The referee response did not match the frozen entries, configuration, or required format."); }
         const resultHash = hash(result);
         if (row.state === "complete" && row.settlement_hash === resultHash) return view(row, id);
         if (row.state !== "judging" || Number(row.expires_at) <= time()) throw new ApiError(409, "This judging lease has finished or expired.");
         const reason: DuelReason = result.resolution === "order_disagreement" ? "order_disagreement" : result.outcome === "unrated" ? "referee_abstained" : "order_agreement";
-        for (const order of ["ab", "ba"] as const) db.prepare("INSERT INTO antislop_judge_runs VALUES (?,?,?,?,?)").run(duelIdValue, order, result.judgeFingerprint, result.pairFingerprint, JSON.stringify(result.privateVerdicts[order]));
+        for (const order of ["ab", "ba"] as const) db.prepare(`INSERT INTO antislop_judge_runs(duel_id,display_order,judge_fingerprint,pair_fingerprint,verdict_json,private_expires_at)
+          VALUES (?,?,?,?,?,?)`).run(duelIdValue, order, result.judgeFingerprint, result.pairFingerprint, JSON.stringify(result.privateVerdicts[order]), time() + PRIVATE_RETENTION_MS);
         db.prepare("UPDATE antislop_duels SET state='complete',outcome=?,reason=?,completed_at=?,settlement_hash=? WHERE id=? AND state='judging'").run(result.outcome, reason, time(), resultHash, duelIdValue);
         return view(duelRow(duelIdValue), id);
       });

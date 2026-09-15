@@ -85,6 +85,49 @@ test("paste/preview stay local, consent starts unchecked, and editing invalidate
   assert.equal(writes().length, 0);
 });
 
+test("privacy disclosure precedes approval and identifying markup remains literal private text", async () => {
+  const identifyingText = 'My name is Example. <img src="https://untrusted.example/private" onerror="alert(1)">';
+  await mount(); await press("Challenge a friend");
+  await type("antislop-entry-json", JSON.stringify({ ...draft(), summary: identifyingText })); await press("Review my entry");
+  assert.match(dialog().textContent!, /not automatically anonymized/);
+  const approval = checkbox("approve sending");
+  assert.match(approval.closest("label")!.textContent!, /stores new private recaps for 7 days/);
+  assert.match(approval.closest("label")!.textContent!, /Vercel AI Gateway to Alibaba’s Qwen model/);
+  assert.equal(approval.checked, false);
+  assert.equal(button("Approve & create").disabled, true);
+  assert.ok(dialog().textContent!.includes(identifyingText));
+  assert.equal(dialog().querySelector("img,script,iframe"), null);
+  assert.equal(writes().length, 0);
+  assert.equal(win.localStorage.length + win.sessionStorage.length, 0);
+});
+
+test("privacy erasure invalidates in-flight private reads and clears drafts without changing player", async () => {
+  owned.entries = [ownEntry()];
+  await mount(); await press("Prepare fresh entry");
+  await type("antislop-entry-json", JSON.stringify(draft())); await press("Review my entry");
+  await click(checkbox("approve sending")); await click(checkbox("Allow challenges"));
+  await press("Close");
+  let resolveOld!: (response: Response) => void, privateReads = 0;
+  handler = request => {
+    if (request.url === "/api/antislop/me") {
+      privateReads++;
+      if (privateReads === 1) return new Promise(resolve => { resolveOld = resolve; });
+      return Response.json({ ...owned, entries: [] });
+    }
+  };
+  await click(button("Refresh", win.document.querySelector("main")!));
+  await act(async () => root!.render(createElement(AntiSlop, { ...props, privateDataRevision: 1 }))); await flush();
+  assert.equal(dialog().open, false);
+  assert.doesNotMatch(win.document.body.textContent!, /PRIVATE-EVIDENCE-CANARY/);
+  assert.match(win.document.querySelector("header")!.textContent!, /Your player/);
+  await act(async () => resolveOld(Response.json(owned))); await flush();
+  assert.doesNotMatch(win.document.querySelector("main")!.textContent!, /Ready when you are/);
+  await press("Challenge a friend");
+  assert.equal((win.document.getElementById("antislop-entry-json") as HTMLTextAreaElement).value, "");
+  assert.equal(win.document.getElementById("antislop-player-name"), null);
+  assert.equal(writes().length, 0);
+});
+
 test("public summary requires its own approval and entry retries preserve request identity", async () => {
   let attempts = 0;
   handler = request => {

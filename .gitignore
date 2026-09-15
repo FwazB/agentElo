@@ -26,6 +26,7 @@ __pycache__/
 .git-credentials
 .vercel/
 .railway/
+.worktrees/
 .ssh/
 *.pem
 *.key

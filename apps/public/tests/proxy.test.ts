@@ -87,6 +87,36 @@ test("a private entry reviewed for A is never uploaded when the captured cookie 
   assert.equal((await response.text()).includes("private-review-for-player-A"), false);
 });
 
+test("private erasure is same-origin, authenticated and bound to the reviewed player", async () => {
+  const segments = ["antislop", "privacy", "erase"];
+  for (const scenario of ["cross-origin", "missing-cookie", "missing-player", "changed-player", "valid"] as const) {
+    const req = request("antislop/privacy/erase", "POST", {}, scenario === "cross-origin" ? "https://evil.test" : "https://elo.test");
+    if (scenario !== "missing-cookie") req.headers.set("cookie", `elo_session=${token}`);
+    if (scenario !== "missing-player") req.headers.set("x-expected-player-id", playerId);
+    let calls = 0;
+    const response = await proxyApi(req, segments, { ...config, fetcher: (async (url, init) => {
+      calls++;
+      const headers = new Headers(init?.headers);
+      assert.equal(headers.get("authorization"), `Bearer ${token}`);
+      assert.equal(headers.get("x-expected-player-id"), playerId);
+      if (calls === 1) {
+        assert.equal(String(url), "https://api.test/v1/me");
+        assert.equal(init?.body, undefined);
+        // A later cookie change must not retarget an already confirmed erasure.
+        req.headers.set("cookie", `elo_session=${"b".repeat(64)}`);
+        return Response.json({ player: { id: scenario === "changed-player" ? `p_${"b".repeat(32)}` : playerId } });
+      }
+      assert.equal(String(url), "https://api.test/v1/antislop/privacy/erase");
+      assert.equal(init?.method, "POST"); assert.equal(init?.body, "{}");
+      return Response.json({ erased: true });
+    }) as typeof fetch });
+    assert.equal(response.status, { "cross-origin": 403, "missing-cookie": 401, "missing-player": 400, "changed-player": 409, valid: 200 }[scenario]);
+    assert.equal(calls, scenario === "valid" ? 2 : scenario === "changed-player" ? 1 : 0);
+    assert.equal(response.headers.get("set-cookie"), null);
+    if (scenario === "valid") assert.deepEqual(await response.json(), { erased: true });
+  }
+});
+
 test("a verified private upload keeps its captured bearer and expected player through later cookie changes", async () => {
   const body = { draft: "private-" + "x".repeat(20_000) };
   const req = request("antislop/entries", "POST", body);

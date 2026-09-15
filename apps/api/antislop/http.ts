@@ -132,6 +132,13 @@ export async function handleAntislop(req: IncomingMessage, res: ServerResponse, 
   try {
     if (req.method === "GET" && path === "/arena") return json(res, 200, store.arena(viewer()));
     if (req.method === "GET" && path === "/me") return json(res, 200, store.me(account()));
+    if (req.method === "POST" && path === "/privacy/erase") {
+      const { id } = await writeBody([]);
+      const expectedPlayer = req.headers["x-expected-player-id"];
+      if (typeof expectedPlayer !== "string" || !/^p_[0-9a-f]{32}$/.test(expectedPlayer)) throw new ApiError(400, "Invalid expected player ID.");
+      if (expectedPlayer !== id) throw new ApiError(409, "Your active player changed. Review this request before deleting private recaps.");
+      return json(res, 200, store.erasePrivateEvidence(id));
+    }
     const entry = /^\/entries\/(ae_[0-9a-f]{32})$/.exec(path);
     if (req.method === "GET" && entry?.[1]) return json(res, 200, store.entry(entry[1], viewer()));
     const duel = /^\/duels\/(ad_[0-9a-f]{32})$/.exec(path);

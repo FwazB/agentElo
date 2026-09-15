@@ -42,10 +42,11 @@ enforce a dollar budget. Exhausted capacity must fail safely.
 
 | Setting | Pilot value |
 | --- | --- |
-| Season | `antislop-pilot-2026-09-v1` |
+| Season | `antislop-pilot-2026-09-v2` |
 | Gateway endpoint | `https://ai-gateway.vercel.sh/v1/chat/completions` |
 | Model ID | `alibaba/qwen3-next-80b-a3b-instruct` |
 | Provider route | Alibaba only; no configured fallback |
+| Provider privacy | Per-request `zeroDataRetention: true`, which also disallows prompt training; requires Vercel Pro or Enterprise |
 | Output | Strict verdict JSON schema, non-streaming, at most 1,800 output tokens |
 | Sampling | Temperature `0` |
 | Calls | A/B and B/A concurrently, with the same configuration |
@@ -120,9 +121,19 @@ entry is at most 64 KiB. JSON parsing rejects duplicate keys and unexpected fiel
 Only the authenticated owner receives their private entry through submission or
 `me`. Opponent/public responses and share images contain public projections;
 they do not expose raw evidence or referee explanations. Private explanations
-remain in server storage. Never log OIDC/service/session/lease tokens, private
+remain private in server storage until their retention deadline or owner erasure. Never log OIDC/service/session/lease tokens, private
 evidence, draft bodies or referee responses, or include them in public issues,
 deployment receipts or screenshots.
+
+New recaps expire seven days after submission and new referee notes seven days
+after completion, or earlier when a referenced recap is erased or expires. The API removes expired payloads on access and in an hourly
+sweep while running. Pre-policy records retain their existing data until the
+owner requests erasure. **Delete private recaps** removes all of a player's
+private snapshots and related referee notes, including entries outside the
+recent-history view; it opts the entries out of challenges and refuses while a
+duel is active. Approved public summaries, results and history remain. This does
+not erase historical exports or hosting backups; configure backup expiry
+separately. See [privacy boundaries](../SECURITY.md#private-antislop-data).
 
 ## API surfaces
 
@@ -149,6 +160,7 @@ with the authenticated owner immediately before storage. A player change returns
 | `GET /api/antislop/duels/<id>` | Structured result and participant-specific `canJudge` |
 | `POST /api/antislop/entries` | `{requestId, draft, refereeApproved:true, publicSummary:{text,approved:true}\|null, optedIn}` |
 | `POST /api/antislop/entries/<id>/participation` | `{optedIn}` for the owner's entry |
+| `POST /api/antislop/privacy/erase` | `{}` and `X-Expected-Player-Id`; erase all owned private recaps and related notes |
 | `POST /api/antislop/duels` | `{requestId, entryId, opponentEntryId}` |
 | `POST /api/antislop/duels/<id>/judge` | Request judging of an admitted duel; client body is discarded |
 
@@ -185,9 +197,11 @@ humans, and submitted evidence is not independently verified.
 | New entries per account | 10 per UTC day |
 | New idempotency request records per account | 60 per UTC day |
 
-Failed and expired admitted duels still consume daily capacity. The pilot has no
-automatic private-evidence expiry or user deletion endpoint; retention/deletion
-needs an explicit operational decision, not an assumed TTL.
+Failed and expired admitted duels still consume the initiator's and global daily
+capacity. An incoming challenge that expires without ever claiming the referee
+does not consume the opponent's daily allowance. Pending challenges reserve both
+participants' capacity; once judging is claimed, both remain charged even if it
+fails. Private payload retention and owner erasure are described above.
 
 ## Release checks
 

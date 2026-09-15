@@ -39,7 +39,7 @@ test("gateway fixes model, provider, structured schema and credentials while ret
       assert.equal(body.temperature, 0);
       assert.equal(body.max_tokens, 1800);
       assert.equal(body.stream, false);
-      assert.deepEqual(body.providerOptions, { gateway: { only: ["alibaba"] } });
+      assert.deepEqual(body.providerOptions, { gateway: { only: ["alibaba"], zeroDataRetention: true } });
       assert.deepEqual(body.response_format, { type: "json_schema", json_schema: { name: "antislop_verdict_v1", strict: true, schema: VERDICT_SCHEMA } });
       assert.equal(body.response_format.json_schema.schema.additionalProperties, false);
       assert.equal(body.response_format.json_schema.schema.properties.evidenceRefs.additionalProperties, false);

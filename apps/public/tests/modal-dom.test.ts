@@ -71,7 +71,7 @@ function player(username = "local_player", withReceipt = false): Me {
 function overview(mode: "scalar" | "binary" = "scalar", username?: string): Overview {
   return { weekId, competitionId, mode, players: username ? [{ id: playerId, username, rank: null, ratingMilli: 1200000, ratedMatches: 0, formScore: 849, confidencePpm: 430000, weekId }] : [], matches: [], usernames: username ? { [playerId]: username } : {}, stats: { players: username ? 1 : 0, matches: 0, ratedPlayers: 0, queued: 0 } };
 }
-type RequestRecord = { url: string; method: string; body: any; signal: AbortSignal | undefined };
+type RequestRecord = { url: string; method: string; body: any; signal: AbortSignal | undefined; headers: Headers };
 type Handler = (request: RequestRecord) => Response | Promise<Response> | undefined;
 let root: Root | null = null;
 let requests: RequestRecord[] = [];
@@ -79,7 +79,7 @@ let handler: Handler | undefined;
 let currentPlayer: Me | null = player();
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async (input, init) => {
-  const record = { url: String(input), method: init?.method ?? "GET", body: init?.body ? JSON.parse(String(init.body)) : null, signal: init?.signal ?? undefined };
+  const record = { url: String(input), method: init?.method ?? "GET", body: init?.body ? JSON.parse(String(init.body)) : null, signal: init?.signal ?? undefined, headers: new Headers(init?.headers) };
   assert.ok(record.url.startsWith("/api/"), `External fetch forbidden: ${record.url}`);
   requests.push(record);
   const result = handler?.(record);
@@ -120,6 +120,41 @@ async function hash(value: string) { await act(async () => { const oldURL = win.
 async function prepareSignup() { await press("Let’s play", win.document); await type("new-username", "local_player"); await press("That’s me"); assert.equal(view(), "key"); return byId<HTMLTextAreaElement>("new-recovery-key").value; }
 async function saveKey() { await click(dialog().querySelector<HTMLInputElement>('input[type="checkbox"]')!); }
 async function review(value: unknown) { await type("assessment-json", typeof value === "string" ? value : JSON.stringify(value)); await press("Preview my result"); }
+
+test("private erasure requires confirmation, preserves drafts on failures, and clears them only after success", async () => {
+  currentPlayer = player("local_player", true);
+  const publishedReceipt = structuredClone(currentPlayer.player.receipt);
+  let attempts = 0;
+  handler = request => {
+    if (request.url !== "/api/antislop/privacy/erase") return;
+    assert.equal(request.method, "POST"); assert.deepEqual(request.body, {});
+    assert.equal(request.headers.get("X-Expected-Player-Id"), playerId);
+    attempts++;
+    if (attempts === 1) return Response.json({ error: "Finish the active duel before deleting private recaps." }, { status: 409 });
+    if (attempts === 2) throw new Error("Deletion response lost. Retry to confirm.");
+    return Response.json({ erased: true });
+  };
+  const draft = { ...score, formScore: 721 };
+  await mount({ initialDialog: "rate" }); await review(draft);
+  await hash("account");
+  const details = [...dialog().querySelectorAll("summary")].find(item => item.textContent === "Private recaps")!;
+  await click(details); await press("Delete private recaps");
+  assert.equal(attempts, 0); assert.match(dialog().textContent!, /approved public summaries and duel results stay/);
+  assert.match(dialog().textContent!, /does not delete backups or copies held by AI providers/);
+  await press("Keep my recaps"); assert.equal(attempts, 0);
+  await press("Delete private recaps"); await press("Delete my private recaps");
+  assert.equal(attempts, 1); assert.match(dialog().textContent!, /Finish the active duel/);
+  await hash("rate"); assert.equal(byId<HTMLTextAreaElement>("assessment-json").value, JSON.stringify(draft)); assert.ok(hasButton("Publish my score"));
+  await hash("account"); await press("Delete private recaps"); await press("Delete my private recaps");
+  assert.equal(attempts, 2); assert.match(dialog().textContent!, /Deletion response lost/);
+  assert.doesNotMatch(dialog().textContent!, /were deleted from AntiSlop/);
+  await press("Delete my private recaps");
+  assert.equal(attempts, 3); assert.match(dialog().textContent!, /were deleted from AntiSlop/);
+  assert.deepEqual(currentPlayer!.player.receipt, publishedReceipt);
+  assert.equal(requests.some(request => request.url === "/api/session"), false);
+  await hash("rate"); assert.equal(byId<HTMLTextAreaElement>("assessment-json").value, ""); assert.equal(hasButton("Publish my score"), false);
+  assert.ok(hasButton("Share current card"));
+});
 const writes = () => requests.filter(item => item.method !== "GET");
 
 afterEach(async () => {

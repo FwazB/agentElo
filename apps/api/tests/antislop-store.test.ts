@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
@@ -48,6 +49,16 @@ function harness() {
     setFault: (value: string) => { fault = value; },
     newPlayer: () => legacy.createPlayer(`testplayer${++playerNumber}`, randomBytes(32).toString("hex")).player.id,
     reopen: () => { arena.close(); arena = createAntislopStore(options); },
+    reopenFromLegacySchema: () => {
+      arena.close();
+      const db = new DatabaseSync(databasePath);
+      try {
+        db.exec("DROP INDEX antislop_private_expiry");
+        for (const column of ["public_json", "public_hash", "private_expires_at", "private_erased_at"]) db.exec(`ALTER TABLE antislop_entries DROP COLUMN ${column}`);
+        db.exec("ALTER TABLE antislop_judge_runs DROP COLUMN private_expires_at");
+      } finally { db.close(); }
+      arena = createAntislopStore(options);
+    },
     second: () => createAntislopStore(options),
     inspect: () => new DatabaseSync(databasePath, { readOnly: true }),
     close: () => { arena.close(); legacy.close(); rmSync(directory, { recursive: true, force: true }); },
@@ -421,5 +432,227 @@ test("season config drift is rejected and frozen snapshot corruption is detected
     const tampered = { ...entry.entry, summary: "Silent rewrite" };
     db.prepare("UPDATE antislop_entries SET snapshot_json=? WHERE id=?").run(JSON.stringify(tampered), entry.entryId); db.close();
     assert.throws(() => h.arena.entry(entry.entryId), /integrity failure/);
+  } finally { h.close(); }
+});
+
+test("new private evidence expires at seven days while approved public history and fingerprints persist", () => {
+  const h = harness();
+  try {
+    const p = pair(h, "retention"), claim = h.arena.claim(p.a, p.duel.duelId), input = settlement(claim);
+    const completed = h.arena.settle(p.a, p.duel.duelId, input);
+    const legacyBefore = h.legacy.me(p.a);
+    const db = h.inspect();
+    const before = db.prepare("SELECT fingerprint,content_hash FROM antislop_entries WHERE id=?").get(p.entryA.entryId);
+    db.close();
+    h.setTime(START + 7 * DAY - 1);
+    assert.equal(h.arena.me(p.a).entries.length, 1);
+    h.setTime(START + 7 * DAY);
+    h.arena.prunePrivateEvidence();
+    assert.equal(h.arena.me(p.a).entries.length, 0);
+    assert.equal(h.arena.me(p.b).entries.length, 0);
+    assert.equal(h.arena.entry(p.entryA.entryId).publicSummary, "Approved public retention-a");
+    assert.equal(h.arena.entry(p.entryA.entryId).optedIn, false);
+    const after = h.arena.duel(p.duel.duelId);
+    assert.equal(after.outcome, completed.outcome); assert.equal(after.judgeFingerprint, completed.judgeFingerprint);
+    assert.equal(after.completedAt, completed.completedAt); assert.deepEqual(after.playerStats, completed.playerStats);
+    assert.deepEqual(h.legacy.me(p.a).player, legacyBefore.player);
+    assert.throws(() => h.arena.settle(p.a, p.duel.duelId, input), status(410));
+    const inspect = h.inspect();
+    try {
+      assert.equal(inspect.prepare("SELECT COUNT(*) n FROM antislop_entries WHERE snapshot_json='null' AND private_erased_at=?").get(START + 7 * DAY)!.n, 2);
+      assert.equal(inspect.prepare("SELECT COUNT(*) n FROM antislop_judge_runs WHERE verdict_json='null'").get()!.n, 2);
+      assert.deepEqual(inspect.prepare("SELECT fingerprint,content_hash FROM antislop_entries WHERE id=?").get(p.entryA.entryId), before);
+      assert.equal(inspect.prepare("SELECT COUNT(*) n FROM antislop_requests").get()!.n, 3);
+    } finally { inspect.close(); }
+    h.reopen(); assert.equal(h.arena.duel(p.duel.duelId).outcome, completed.outcome);
+  } finally { h.close(); }
+});
+
+test("additive migration preserves historical private payloads with null deadlines until owner erasure", () => {
+  const h = harness();
+  try {
+    const p = pair(h, "historical"), claim = h.arena.claim(p.a, p.duel.duelId);
+    h.arena.settle(p.a, p.duel.duelId, settlement(claim));
+    const later = START + 366 * DAY;
+    h.setTime(later); h.reopenFromLegacySchema();
+    assert.equal(h.arena.me(p.a).entries[0]!.entry.summary, p.entryA.entry.summary);
+    assert.equal(h.arena.duel(p.duel.duelId).outcome, "a_wins");
+    const inspect = h.inspect();
+    try {
+      assert.equal(inspect.prepare("SELECT COUNT(*) n FROM antislop_entries WHERE private_expires_at IS NULL AND snapshot_json<>'null'").get()!.n, 2);
+      assert.equal(inspect.prepare("SELECT COUNT(*) n FROM antislop_judge_runs WHERE private_expires_at IS NULL AND verdict_json<>'null'").get()!.n, 2);
+    } finally { inspect.close(); }
+    const recent = h.arena.submitEntry(p.a, submission("post-migration", { draft: draft("post-migration", later) })).entry;
+    h.setTime(later + 7 * DAY); h.reopen();
+    assert.deepEqual(h.arena.me(p.a).entries.map(entry => entry.entryId), [p.entryA.entryId]);
+    assert.equal(h.arena.entry(recent.entryId).publicSummary, "Approved public post-migration");
+    assert.deepEqual(h.arena.erasePrivateEvidence(p.a), { erased: true });
+    assert.equal(h.arena.me(p.a).entries.length, 0);
+    assert.equal(h.arena.me(p.b).entries[0]!.entry.summary, p.entryB.entry.summary);
+    const erased = h.inspect();
+    try { assert.equal(erased.prepare("SELECT COUNT(*) n FROM antislop_judge_runs WHERE verdict_json='null'").get()!.n, 2); }
+    finally { erased.close(); }
+    h.reopen(); assert.equal(h.arena.duel(p.duel.duelId).outcome, "a_wins");
+  } finally { h.close(); }
+});
+
+test("new verdicts on historical entries have their own completion deadline", () => {
+  const h = harness();
+  try {
+    const p = pair(h, "verdict-deadline");
+    h.reopenFromLegacySchema();
+    h.setTime(START + 1000);
+    const claim = h.arena.claim(p.a, p.duel.duelId);
+    h.arena.settle(p.a, p.duel.duelId, settlement(claim));
+    h.setTime(START + 7 * DAY + 999); h.arena.prunePrivateEvidence();
+    let db = h.inspect();
+    try { assert.equal(db.prepare("SELECT COUNT(*) n FROM antislop_judge_runs WHERE verdict_json<>'null'").get()!.n, 2); } finally { db.close(); }
+    h.setTime(START + 7 * DAY + 1000); h.arena.prunePrivateEvidence();
+    db = h.inspect();
+    try { assert.equal(db.prepare("SELECT COUNT(*) n FROM antislop_judge_runs WHERE verdict_json='null'").get()!.n, 2); } finally { db.close(); }
+    assert.equal(h.arena.me(p.a).entries.length, 1, "the historical entry has no implicit deadline");
+  } finally { h.close(); }
+});
+
+test("owner erasure covers hidden entries, preserves other owners and cannot be undone by request replay", () => {
+  const h = harness();
+  try {
+    const owner = h.newPlayer(), other = h.newPlayer(), first = submission("hidden-0");
+    for (let index = 0; index < 23; index++) {
+      const at = START + Math.floor(index / 10) * DAY; h.setTime(at);
+      h.arena.submitEntry(owner, index === 0 ? first : submission(`hidden-${index}`, { draft: draft(`hidden-${index}`, at) }));
+    }
+    const otherEntry = h.arena.submitEntry(other, submission("keep-other", { draft: draft("keep-other", START + 2 * DAY) })).entry;
+    assert.equal(h.arena.me(owner).entries.length, 20);
+    assert.deepEqual(h.arena.erasePrivateEvidence(owner), { erased: true });
+    assert.deepEqual(h.arena.erasePrivateEvidence(owner), { erased: true });
+    assert.equal(h.arena.me(owner).entries.length, 0);
+    assert.equal(h.arena.me(other).entries[0]!.entryId, otherEntry.entryId);
+    assert.throws(() => h.arena.submitEntry(owner, first), status(410));
+    assert.throws(() => h.arena.submitEntry(owner, { ...first, requestId: randomUUID(), draft: { ...first.draft, window: draft("unused", START + 2 * DAY).window } }), status(409));
+    const db = h.inspect();
+    try {
+      assert.equal(db.prepare("SELECT COUNT(*) n FROM antislop_entries WHERE player_id=? AND snapshot_json='null'").get(owner)!.n, 23);
+      assert.equal(db.prepare("SELECT COUNT(*) n FROM antislop_entry_participation p JOIN antislop_entries e ON e.id=p.entry_id WHERE e.player_id=? AND p.opted_in=1").get(owner)!.n, 0);
+      assert.equal(db.prepare("SELECT COUNT(*) n FROM antislop_requests WHERE player_id=?").get(owner)!.n, 23);
+    } finally { db.close(); }
+    h.reopen(); assert.equal(h.arena.me(owner).entries.length, 0);
+  } finally { h.close(); }
+});
+
+test("owner erasure refuses live pending or judging duels without deleting any entries", () => {
+  const h = harness(), second = h.second();
+  try {
+    const p = pair(h, "active-erasure"); h.arena.submitEntry(p.a, submission("extra-erasure"));
+    assert.throws(() => second.erasePrivateEvidence(p.a), status(409));
+    assert.equal(h.arena.me(p.a).entries.length, 2);
+    const claim = second.claim(p.b, p.duel.duelId);
+    assert.throws(() => h.arena.erasePrivateEvidence(p.a), status(409));
+    assert.equal(second.me(p.a).entries.length, 2);
+    h.setTime(START + 90_000);
+    assert.deepEqual(h.arena.erasePrivateEvidence(p.a), { erased: true });
+    assert.equal(second.duel(p.duel.duelId).state, "failed");
+    assert.equal(second.me(p.a).entries.length, 0);
+    assert.equal(second.me(p.b).entries.length, 1);
+    assert.throws(() => second.settle(p.b, p.duel.duelId, settlement(claim)), status(410));
+    assert.equal(second.me(p.a).quota.used, 1); assert.equal(second.me(p.b).quota.used, 1);
+  } finally { second.close(); h.close(); }
+});
+
+test("erasure and retention failures roll back snapshots, verdicts and participation together", () => {
+  const h = harness();
+  try {
+    const p = pair(h, "erase-rollback"), claim = h.arena.claim(p.a, p.duel.duelId);
+    h.arena.settle(p.a, p.duel.duelId, settlement(claim));
+    h.setFault("eraseAntislopEvidence"); assert.throws(() => h.arena.erasePrivateEvidence(p.a), /injected/); h.setFault("");
+    assert.equal(h.arena.me(p.a).entries.length, 1); assert.equal(h.arena.entry(p.entryA.entryId).optedIn, true);
+    let db = h.inspect();
+    try { assert.equal(db.prepare("SELECT COUNT(*) n FROM antislop_judge_runs WHERE verdict_json<>'null'").get()!.n, 2); } finally { db.close(); }
+    h.setTime(START + 7 * DAY); h.setFault("pruneAntislopEvidence");
+    assert.throws(() => h.arena.prunePrivateEvidence(), /injected/);
+    db = h.inspect();
+    try { assert.equal(db.prepare("SELECT COUNT(*) n FROM antislop_entries WHERE snapshot_json<>'null'").get()!.n, 2); } finally { db.close(); }
+    h.setFault(""); h.arena.prunePrivateEvidence(); assert.equal(h.arena.me(p.a).entries.length, 0);
+    db = new DatabaseSync(h.databasePath);
+    db.prepare("UPDATE antislop_entries SET public_json=replace(public_json,'Approved public','PRIVATE CORRUPTION') WHERE id=?").run(p.entryA.entryId); db.close();
+    assert.throws(() => h.arena.entry(p.entryA.entryId), /integrity failure/);
+  } finally { h.close(); }
+});
+
+test("unclaimed incoming timeouts release recipient quota but still consume initiator and global budgets", () => {
+  const h = harness();
+  try {
+    const attacker = h.newPlayer(), target = h.newPlayer(), friend = h.newPlayer();
+    const targetEntry = h.arena.submitEntry(target, submission("quota-target")).entry;
+    const friendEntry = h.arena.submitEntry(friend, submission("quota-friend")).entry;
+    for (let index = 0; index < 10; index++) {
+      const entry = h.arena.submitEntry(attacker, submission(`incoming-${index}`)).entry;
+      h.arena.createDuel(attacker, { requestId: randomUUID(), entryId: entry.entryId, opponentEntryId: targetEntry.entryId });
+      assert.equal(h.arena.me(target).quota.used, 1); assert.equal(h.arena.me(target).quota.inFlight, 1);
+      h.setTime(START + (index + 1) * 120_001);
+      assert.equal(h.arena.me(target).quota.used, 0); assert.equal(h.arena.me(target).quota.inFlight, 0);
+    }
+    h.reopen();
+    assert.equal(h.arena.me(attacker).quota.used, 10); assert.equal(h.arena.me(target).quota.remaining, 10);
+    const db = h.inspect();
+    try {
+      assert.equal(db.prepare("SELECT COUNT(*) n FROM antislop_duels").get()!.n, 10);
+      assert.equal(db.prepare("SELECT COUNT(*) n FROM antislop_judge_runs").get()!.n, 0);
+    } finally { db.close(); }
+    const legitimate = h.arena.createDuel(target, { requestId: randomUUID(), entryId: targetEntry.entryId, opponentEntryId: friendEntry.entryId }).duel;
+    const claim = h.arena.claim(target, legitimate.duelId);
+    h.arena.fail(target, legitimate.duelId, { leaseToken: claim.leaseToken, reason: "referee_failed" });
+    assert.equal(h.arena.me(target).quota.used, 1); assert.equal(h.arena.me(friend).quota.used, 1);
+  } finally { h.close(); }
+});
+
+// Start independent processes at a barrier, so SQLite—not JavaScript call order—
+// decides which authorization transition wins.
+async function raceErasure(databasePath: string, jobs: Record<string, unknown>[]) {
+  const source = `import{createAntislopStore}from ${JSON.stringify(new URL("../antislop/store.ts", import.meta.url).href)};
+    const store=createAntislopStore({databasePath:process.argv[1],now:()=>new Date(${START})});
+    console.log('READY');let raw='';for await(const part of process.stdin)raw+=part;
+    try{const job=JSON.parse(raw);const value=job.kind==='erase'?store.erasePrivateEvidence(job.id):store.createDuel(job.id,job.input);
+      console.log(JSON.stringify({ok:true,value}));}catch(error){console.log(JSON.stringify({ok:false,status:error.status??500}));}finally{store.close();}`;
+  const children = jobs.map(job => {
+    const child = spawn(process.execPath, ["--import", "tsx", "--input-type=module", "-e", source, databasePath], { cwd: resolve(import.meta.dirname, "../../.."), stdio: ["pipe", "pipe", "pipe"] });
+    let resolveReady!: () => void, rejectReady!: (error: Error) => void;
+    const ready = new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
+    let output = "", errors = "";
+    child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
+    child.stdout.on("data", data => { output += data; if (output.includes("READY\n")) resolveReady(); });
+    child.stderr.on("data", data => { errors += data; });
+    const result = new Promise<{ ok: boolean; status?: number }>((resolve, reject) => {
+      child.on("error", error => { rejectReady(error); reject(error); });
+      child.on("exit", code => {
+        if (code !== 0) { const error = new Error(`SQLite privacy worker ${code}: ${errors.slice(0, 300)}`); rejectReady(error); reject(error); return; }
+        try { resolve(JSON.parse(output.trim().split("\n").at(-1)!)); } catch { reject(new Error("Invalid privacy worker output")); }
+      });
+    });
+    void result.catch(() => {});
+    return { child, job, ready, result };
+  });
+  const deadline = setTimeout(() => { for (const { child } of children) child.kill("SIGKILL"); }, 12_000);
+  try {
+    await Promise.all(children.map(worker => worker.ready));
+    for (const worker of children) worker.child.stdin.end(JSON.stringify(worker.job));
+    return await Promise.all(children.map(worker => worker.result));
+  } finally { clearTimeout(deadline); for (const { child } of children) if (child.exitCode === null) child.kill("SIGKILL"); }
+}
+
+test("concurrent owner erasure and challenge admission cannot both succeed", { timeout: 15_000 }, async () => {
+  const h = harness();
+  try {
+    const a = h.newPlayer(), b = h.newPlayer();
+    const ea = h.arena.submitEntry(a, submission("race-a")).entry, eb = h.arena.submitEntry(b, submission("race-b")).entry;
+    const results = await raceErasure(h.databasePath, [
+      { kind: "erase", id: b },
+      { kind: "duel", id: a, input: { requestId: randomUUID(), entryId: ea.entryId, opponentEntryId: eb.entryId } },
+    ]);
+    assert.equal(results.filter(result => result.ok).length, 1);
+    assert.equal(results.find(result => !result.ok)!.status, 409);
+    const entries = h.arena.me(b).entries;
+    if (results[0]!.ok) { assert.equal(entries.length, 0); assert.equal(h.arena.me(a).duels.length, 0); }
+    else { assert.equal(entries.length, 1); assert.equal(h.arena.me(a).duels[0]!.state, "pending"); }
   } finally { h.close(); }
 });

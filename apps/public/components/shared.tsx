@@ -35,10 +35,6 @@ export function Arrow({ diagonal = false }: { diagonal?: boolean }) {
   return <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true"><path d={diagonal ? "M5 19 19 5M5 5h14v14" : "M4 12h15m-6-6 6 6-6 6"} stroke="currentColor" strokeWidth="1.6" /></svg>;
 }
 
-export function Mark({ large = false }: { large?: boolean }) {
-  return <svg className={large ? "brand-mark large" : "brand-mark"} viewBox="0 0 40 40" fill="none" aria-hidden="true"><path d="M5 9h7v7h7v7h7v-7h7V9h3v23H5V9Z" fill="currentColor"/><path d="M19 5h7v11h-7V5Z" fill="currentColor"/></svg>;
-}
-
 export function Header({ action, onHelp, onConnect, onHome }: { action?: ReactNode; onHelp?: () => void; onConnect?: () => void; onHome?: () => void }) {
   return <header className="site-header"><Link className="brand" href="/" aria-label="Computer Elo home" onClick={event => { if (onHome) { event.preventDefault(); onHome(); } }}><span>computer<span className="brand-elo">elo</span></span></Link><nav aria-label="Main navigation"><Link className="nav-link" href="/#help" onClick={event => { if (onHelp) { event.preventDefault(); onHelp(); } }}>How to play</Link>{action}</nav></header>;
 }
