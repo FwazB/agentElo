@@ -1,0 +1,32 @@
+{
+  "version": "antislop.entry.v1",
+  "entryId": "synthetic-entry-b",
+  "participantId": "synthetic-person-b",
+  "window": {
+    "startsAt": "2026-09-08T00:00:00.000Z",
+    "endsAt": "2026-09-15T00:00:00.000Z"
+  },
+  "summary": "Synthetic example: corrected an instruction in a setup guide.",
+  "accomplishments": [
+    {
+      "id": "work-1",
+      "outcome": "The guide now names the required configuration field.",
+      "evidenceIds": [
+        "proof-1"
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "proof-1",
+      "kind": "artifact",
+      "excerpt": "Synthetic before: set the option. Synthetic after: set the outputDirectory option. This is invented fixture text.",
+      "occurredAt": "2026-09-14T10:00:00.000Z"
+    }
+  ],
+  "refereeConsent": {
+    "approved": true,
+    "approvedAt": "2026-09-15T00:00:00.000Z"
+  },
+  "publicSummary": null
+}

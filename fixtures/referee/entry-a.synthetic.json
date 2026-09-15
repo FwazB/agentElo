@@ -1,0 +1,32 @@
+{
+  "version": "antislop.entry.v1",
+  "entryId": "synthetic-entry-a",
+  "participantId": "synthetic-person-a",
+  "window": {
+    "startsAt": "2026-09-08T00:00:00.000Z",
+    "endsAt": "2026-09-15T00:00:00.000Z"
+  },
+  "summary": "Synthetic example: repaired keyboard submission in a contact form.",
+  "accomplishments": [
+    {
+      "id": "work-1",
+      "outcome": "Submitting with Enter now creates one request.",
+      "evidenceIds": [
+        "proof-1"
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "proof-1",
+      "kind": "check",
+      "excerpt": "Synthetic check record: Enter key submits successfully; repeated presses create one request. This is invented fixture text.",
+      "occurredAt": "2026-09-14T10:00:00.000Z"
+    }
+  ],
+  "refereeConsent": {
+    "approved": true,
+    "approvedAt": "2026-09-15T00:00:00.000Z"
+  },
+  "publicSummary": null
+}

@@ -1,0 +1,116 @@
+{
+  "datasetProvenance": "synthetic",
+  "judgeFingerprint": "sha256:1a228528347cbd44692addd41706acf925b87b3522f0d34101db09119747f826",
+  "cases": [
+    {
+      "id": "synthetic-calibration",
+      "split": "calibration",
+      "entryA": {
+        "entryId": "synthetic-entry-a",
+        "participantId": "synthetic-person-a"
+      },
+      "entryB": {
+        "entryId": "synthetic-entry-b",
+        "participantId": "synthetic-person-b"
+      },
+      "labels": [
+        {
+          "raterId": "simulated-rater-1",
+          "outcome": "a_wins"
+        },
+        {
+          "raterId": "simulated-rater-2",
+          "outcome": "a_wins"
+        },
+        {
+          "raterId": "simulated-rater-3",
+          "outcome": "draw"
+        }
+      ]
+    },
+    {
+      "id": "synthetic-holdout",
+      "split": "holdout",
+      "entryA": {
+        "entryId": "synthetic-entry-c",
+        "participantId": "synthetic-person-c"
+      },
+      "entryB": {
+        "entryId": "synthetic-entry-d",
+        "participantId": "synthetic-person-d"
+      },
+      "labels": [
+        {
+          "raterId": "simulated-rater-1",
+          "outcome": "draw"
+        },
+        {
+          "raterId": "simulated-rater-2",
+          "outcome": "draw"
+        },
+        {
+          "raterId": "simulated-rater-3",
+          "outcome": "draw"
+        }
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "caseId": "synthetic-calibration",
+      "repeat": 0,
+      "order": "ab",
+      "outcome": "a_wins",
+      "judgeFingerprint": "sha256:1a228528347cbd44692addd41706acf925b87b3522f0d34101db09119747f826"
+    },
+    {
+      "caseId": "synthetic-calibration",
+      "repeat": 0,
+      "order": "ba",
+      "outcome": "b_wins",
+      "judgeFingerprint": "sha256:1a228528347cbd44692addd41706acf925b87b3522f0d34101db09119747f826"
+    },
+    {
+      "caseId": "synthetic-calibration",
+      "repeat": 1,
+      "order": "ab",
+      "outcome": "a_wins",
+      "judgeFingerprint": "sha256:1a228528347cbd44692addd41706acf925b87b3522f0d34101db09119747f826"
+    },
+    {
+      "caseId": "synthetic-calibration",
+      "repeat": 1,
+      "order": "ba",
+      "outcome": "b_wins",
+      "judgeFingerprint": "sha256:1a228528347cbd44692addd41706acf925b87b3522f0d34101db09119747f826"
+    },
+    {
+      "caseId": "synthetic-holdout",
+      "repeat": 0,
+      "order": "ab",
+      "outcome": "draw",
+      "judgeFingerprint": "sha256:1a228528347cbd44692addd41706acf925b87b3522f0d34101db09119747f826"
+    },
+    {
+      "caseId": "synthetic-holdout",
+      "repeat": 0,
+      "order": "ba",
+      "outcome": "draw",
+      "judgeFingerprint": "sha256:1a228528347cbd44692addd41706acf925b87b3522f0d34101db09119747f826"
+    },
+    {
+      "caseId": "synthetic-holdout",
+      "repeat": 1,
+      "order": "ab",
+      "outcome": "a_wins",
+      "judgeFingerprint": "sha256:1a228528347cbd44692addd41706acf925b87b3522f0d34101db09119747f826"
+    },
+    {
+      "caseId": "synthetic-holdout",
+      "repeat": 1,
+      "order": "ba",
+      "outcome": "a_wins",
+      "judgeFingerprint": "sha256:1a228528347cbd44692addd41706acf925b87b3522f0d34101db09119747f826"
+    }
+  ]
+}

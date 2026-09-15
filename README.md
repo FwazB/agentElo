@@ -8,6 +8,14 @@ A weekly computer-use game: choose a username, ask your own AI to rate your week
 
 Private history stays with the user's assistant. The site accepts only the completed UTC week, aggregate score, coverage and certainty after an explicit preview/publish step. The optional public MCP exposes the guide and prompt, with no account or history access. Without enough evidence, the assistant asks for missing examples and returns no score.
 
+## AntiSlop direction
+
+The next product iteration is on-demand, evidence-based PvP with a shared referee.
+The first implementation is an offline entry and calibration toolkit under
+`packages/referee`; the existing live scoring flow is unchanged by this toolkit.
+See [the product direction](docs/antislop-direction.md) and
+[the calibration workflow](docs/referee-calibration.md).
+
 ## Develop
 
 Use Node 24 and install both locked dependency trees:
