@@ -97,13 +97,56 @@ test("bounds arrays before traversing their contents", () => {
   reject(value => { value.evidence = new Array(1_000_000_000) as WorkEntry["evidence"]; });
 });
 
-test("timestamps must be real, canonical UTC millisecond strings", () => {
-  for (const invalid of ["2026-09-09", "2026-09-09T12:00:00Z", "2026-09-09T12:00:00.000+00:00", "2026-09-09t12:00:00.000z", "2026-02-30T12:00:00.000Z", "2026-09-09T24:00:00.000Z", "invalid"]) {
+test("exact timestamps must be real, canonical UTC millisecond strings", () => {
+  for (const invalid of ["2026-09-09T12:00:00Z", "2026-09-09T12:00:00.000+00:00", "2026-09-09t12:00:00.000z", "2026-02-30T12:00:00.000Z", "2026-09-09T24:00:00.000Z", "invalid"]) {
     reject(value => { value.evidence[0]!.occurredAt = invalid; });
     reject(value => { value.window.startsAt = invalid; });
     reject(value => { value.refereeConsent.approvedAt = invalid; });
     reject(value => { value.publicSummary!.approvedAt = invalid; });
   }
+  reject(value => { value.window.startsAt = "2026-09-09"; });
+  reject(value => { value.refereeConsent.approvedAt = "2026-09-15"; });
+  reject(value => { value.publicSummary!.approvedAt = "2026-09-15"; });
+});
+
+test("date-only evidence preserves its precision and allows partially overlapping boundary days", () => {
+  const value = entry();
+  value.evidence[0]!.occurredAt = "2026-09-08";
+  value.evidence[1]!.occurredAt = "2026-09-15";
+  assert.deepEqual(parseWorkEntry(value).evidence.map(item => item.occurredAt), ["2026-09-08", "2026-09-15"]);
+  assert.deepEqual(blindEntry(value).evidence.map(item => item.occurredAt), ["2026-09-08", "2026-09-15"]);
+  reject(item => { item.evidence[0]!.occurredAt = "2026-09-07"; });
+  reject(item => { item.evidence[0]!.occurredAt = "2026-09-16"; });
+});
+
+test("date-only evidence excludes days ending at the window start or starting at its end", () => {
+  const value = entry();
+  value.window = { startsAt: "2026-09-08T00:00:00.000Z", endsAt: "2026-09-15T00:00:00.000Z" };
+  value.evidence[0]!.occurredAt = "2026-09-08";
+  value.evidence[1]!.occurredAt = "2026-09-14";
+  assert.deepEqual(parseWorkEntry(value).evidence, value.evidence);
+  value.evidence[0]!.occurredAt = "2026-09-07";
+  assert.throws(() => parseWorkEntry(value), EntryValidationError);
+  value.evidence[0]!.occurredAt = "2026-09-15";
+  assert.throws(() => parseWorkEntry(value), EntryValidationError);
+});
+
+test("calendar dates must be real exact dates, including leap days", () => {
+  for (const invalid of ["2026-02-29", "2026-02-30", "2026-09-00", "2026-09-31", "2026-9-09", "2026/09/09", "2026-09-09\n", "2026-09-09Z", "2026-09-09 "]) {
+    reject(value => { value.evidence[0]!.occurredAt = invalid; });
+  }
+  const leap = entry();
+  leap.window = { startsAt: "2024-02-26T00:00:00.000Z", endsAt: "2024-03-04T00:00:00.000Z" };
+  leap.evidence.forEach(item => { item.occurredAt = "2024-02-29"; });
+  assert.equal(parseWorkEntry(leap).evidence[0]!.occurredAt, "2024-02-29");
+});
+
+test("entry fingerprints distinguish date-only claims from exact timestamps", () => {
+  const value = entry();
+  value.evidence[0]!.occurredAt = "2026-09-09";
+  const dated = entryFingerprint(value);
+  value.evidence[0]!.occurredAt = "2026-09-09T00:00:00.000Z";
+  assert.notEqual(entryFingerprint(value), dated);
 });
 
 test("requires exactly seven elapsed days and evidence in the half-open window", () => {

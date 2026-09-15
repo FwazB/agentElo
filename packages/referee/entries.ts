@@ -4,6 +4,7 @@ import { isProxy } from "node:util/types";
 export const WORK_ENTRY_VERSION = "antislop.entry.v1";
 export const MAX_ENTRY_BYTES = 64 * 1024;
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/;
 const TIMESTAMP_PATTERN = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$/;
 
@@ -15,6 +16,7 @@ export interface WorkEntry {
   summary: string;
   accomplishments: Array<{ id: string; outcome: string; evidenceIds: string[] }>;
   // Kinds describe submitted material; none establishes independent verification.
+  // occurredAt preserves either a canonical UTC timestamp or a reported YYYY-MM-DD date.
   evidence: Array<{ id: string; kind: "artifact" | "check" | "attestation"; excerpt: string; occurredAt: string }>;
   refereeConsent: { approved: true; approvedAt: string };
   publicSummary: null | { text: string; approvedAt: string };
@@ -78,6 +80,19 @@ function timestamp(value: unknown, label: string): { iso: string; milliseconds: 
   return { iso: value, milliseconds };
 }
 
+function evidenceOccurrence(value: unknown, startsAt: number, endsAt: number): string {
+  if (typeof value === "string" && value.length === 10) {
+    const day = timestamp(`${value}T00:00:00.000Z`, "evidence date");
+    // A nominal UTC day is only an overlap convention. Keep the supplied date:
+    // neither the source timezone nor an exact occurrence time is established.
+    if (day.milliseconds >= endsAt || day.milliseconds + ONE_DAY_MS <= startsAt) invalid("evidence window");
+    return value;
+  }
+  const exact = timestamp(value, "evidence timestamp");
+  if (exact.milliseconds < startsAt || exact.milliseconds >= endsAt) invalid("evidence window");
+  return exact.iso;
+}
+
 function uniqueId(value: unknown, seen: Set<string>, label: string): string {
   const id = identifier(value, label);
   if (seen.has(id)) invalid(`duplicate ${label}`);
@@ -103,9 +118,8 @@ export function parseWorkEntry(value: unknown): WorkEntry {
     const id = uniqueId(evidenceItem.id, evidenceIds, "evidence id");
     const kind = evidenceItem.kind;
     if (kind !== "artifact" && kind !== "check" && kind !== "attestation") invalid("evidence kind");
-    const occurredAt = timestamp(evidenceItem.occurredAt, "evidence timestamp");
-    if (occurredAt.milliseconds < startsAt.milliseconds || occurredAt.milliseconds >= endsAt.milliseconds) invalid("evidence window");
-    return { id, kind, excerpt: text(evidenceItem.excerpt, 6_000, "evidence excerpt"), occurredAt: occurredAt.iso };
+    const occurredAt = evidenceOccurrence(evidenceItem.occurredAt, startsAt.milliseconds, endsAt.milliseconds);
+    return { id, kind, excerpt: text(evidenceItem.excerpt, 6_000, "evidence excerpt"), occurredAt };
   });
 
   const accomplishmentIds = new Set<string>();
