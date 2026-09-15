@@ -16,7 +16,8 @@ export async function generateMetadata({ params }: Context): Promise<Metadata> {
     : "A new player in the open computer league. Rate your week and share your score.";
   const imageUrl = `${SITE_URL}/u/${username}/opengraph-image`;
   return {
-    title, description,
+    title: receipt ? title : `@${username}`,
+    description,
     alternates: { canonical: `${SITE_URL}/u/${username}` },
     openGraph: { title, description, url: `${SITE_URL}/u/${username}`, type: "profile", images: [{ url: imageUrl, width: 1200, height: 630 }] },
     twitter: { card: "summary_large_image", title, description, images: [imageUrl] },
