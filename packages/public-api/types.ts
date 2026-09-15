@@ -1,9 +1,10 @@
 import type { EloMode } from "../elo-engine/src/constants.ts";
 import type { MatchReceipt, PlayerReceipt } from "../elo-engine/src/receipts.ts";
+import type { AssessmentContext } from "./assessment-context.ts";
 
 export type { EloMode, MatchReceipt, PlayerReceipt };
 
-export interface PublicPlayer { id: string; username: string | null; receipt: PlayerReceipt | null }
+export interface PublicPlayer { id: string; username: string | null; receipt: PlayerReceipt | null; assessmentContext?: AssessmentContext }
 export interface PlayerView {
   player: PublicPlayer;
   matches: MatchReceipt[];

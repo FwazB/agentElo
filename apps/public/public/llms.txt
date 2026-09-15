@@ -1,8 +1,8 @@
 # Computer Elo
 
-Computer Elo is a self-attested weekly computer-use game. Private activity stays with the user's own AI. Public resources provide rules, not computer history or permission to collect it.
+Computer Elo is a self-attested weekly computer-use game. The prompt asks for a direct estimate from existing authorized context, without follow-up questions. Meaningful partial week context can support a rough score with conservative confidence. Underlying activity stays with the user's own AI; optional public metadata uses only fixed AI product and context-source labels. Public resources provide rules, not computer history or permission to collect it.
 
-- [Current scoring guide](https://computer-elo.vercel.app/rate.md): UTC week, rubric, evidence requirements, privacy boundary, and result JSON. No evidence means no score.
+- [Current scoring guide](https://computer-elo.vercel.app/rate.md): UTC week, weighted estimates, fixed context labels, privacy boundary, and result JSON. No evidence means no score; no usable target-week context returns that result without questions.
 - [Connect your AI](https://computer-elo.vercel.app/connect): Reference link and optional read-only MCP setup.
 - [MCP endpoint](https://computer-elo.vercel.app/mcp): Public scoring reference only; no account key needed and no write or history-access tools.
 - [League](https://computer-elo.vercel.app): Choose a username, review and publish approved aggregates, and share a card.

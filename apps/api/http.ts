@@ -13,7 +13,7 @@ function json(res: ServerResponse, status: number, value: unknown) {
   res.end(JSON.stringify(value));
 }
 
-async function body(req: IncomingMessage, allowed: readonly string[], timeoutMs: number): Promise<Record<string, unknown>> {
+async function body(req: IncomingMessage, allowed: readonly string[], timeoutMs: number, optional: readonly string[] = []): Promise<Record<string, unknown>> {
   if (req.headers["content-type"]?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
     req.resume();
     throw new ApiError(415, "Use application/json.");
@@ -50,7 +50,7 @@ async function body(req: IncomingMessage, allowed: readonly string[], timeoutMs:
   try { parsed = parseJsonText(raw); } catch { throw new ApiError(400, "Invalid JSON body."); }
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new ApiError(400, "Invalid request body.");
   const keys = Object.keys(parsed);
-  if (keys.length !== allowed.length || keys.some(key => !allowed.includes(key))) throw new ApiError(400, "Invalid request fields.");
+  if (allowed.some(key => !Object.hasOwn(parsed, key)) || keys.some(key => !allowed.includes(key) && !optional.includes(key))) throw new ApiError(400, "Invalid request fields.");
   return parsed as Record<string, unknown>;
 }
 
@@ -177,10 +177,11 @@ export function createApiServer({ store, serviceKey, now = Date.now, bodyTimeout
       if (url.pathname === "/v1/assessment" && req.method === "POST") {
         query(url, []);
         const id = account();
-        const value = await body(req, ["weekId", "formScore", "coveragePpm", "certaintyPpm"], bodyTimeoutMs);
+        const value = await body(req, ["weekId", "formScore", "coveragePpm", "certaintyPpm"], bodyTimeoutMs, ["aiSystem", "contextSource"]);
         confirmAccount(id);
         return json(res, 200, store.assessment(id, { weekId: value.weekId, formScore: value.formScore,
-          coveragePpm: value.coveragePpm, certaintyPpm: value.certaintyPpm }));
+          coveragePpm: value.coveragePpm, certaintyPpm: value.certaintyPpm,
+          ...(Object.hasOwn(value, "aiSystem") || Object.hasOwn(value, "contextSource") ? { aiSystem: value.aiSystem, contextSource: value.contextSource } : {}) }));
       }
       if (url.pathname === "/v1/queue" && req.method === "POST") {
         query(url, []);
