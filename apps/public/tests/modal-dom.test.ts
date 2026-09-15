@@ -189,7 +189,15 @@ test("mounted score flow previews, clears stale/insufficient results, discards, 
   const pending = deferred<Response>();
   handler = request => request.url === "/api/assessment" ? pending.promise : undefined;
   await mount(); await press("Rate my week", win.document);
-  await press("Copy my prompt"); assert.match(copied[0]!, /rate\.md/); assert.match(copied[0]!, /authorize/);
+  await press("Copy my prompt");
+  const assessmentPrompt = copied.at(-1)!;
+  assert.match(assessmentPrompt, /authorize/);
+  assert.match(assessmentPrompt, new RegExp(weekId));
+  for (const [dimension, weight] of [["Output and closure", 30], ["Focus and attention", 25], ["Workflow leverage", 20], ["Verification discipline", 15], ["Operational hygiene", 10]] as const) {
+    assert.ok(assessmentPrompt.includes(`${dimension}, ${weight}%`), `The copied prompt must include ${dimension} and its weight`);
+  }
+  assert.match(assessmentPrompt, /wait/i);
+  assert.equal(dialog().querySelector<HTMLTextAreaElement>('[aria-label="Full assessment prompt with evidence requirements"]')!.value, assessmentPrompt);
   const cases = [
     score,
     { status: "insufficient_evidence", weekId, missing: ["focus", "verification"] },
@@ -202,6 +210,24 @@ test("mounted score flow previews, clears stale/insufficient results, discards, 
     assert.equal(hasButton("Publish my score"), candidate === score);
     assert.ok(!dialog().querySelector(".notice")?.textContent?.includes("PRIVATE_CANARY"));
     assert.equal(writes().length, 0);
+    if ("status" in candidate && candidate.missing.length === 2 && candidate.missing[1] === "verification") {
+      assert.equal(dialog().querySelector(".receipt-preview"), null, "Insufficient evidence must clear the previous score preview");
+      assert.match(dialog().querySelector(".insufficient-result")!.textContent!, /same AI chat/);
+      await press("Copy follow-up");
+      const followUp = copied.at(-1)!;
+      assert.match(followUp, new RegExp(weekId));
+      assert.match(followUp, /focus/i);
+      assert.match(followUp, /verification/i);
+      assert.match(followUp, /wait/i);
+      const targetedContext = followUp.split("\n\n", 1)[0]!;
+      assert.match(targetedContext, /attention and task switching/i);
+      assert.match(targetedContext, /what you checked/i);
+      assert.doesNotMatch(targetedContext, /outcomes you completed|kept work organized/i, "The continuation should ask about the missing areas only");
+      assert.equal(dialog().querySelector<HTMLTextAreaElement>('[aria-label="Targeted evidence follow-up prompt"]')!.value, followUp);
+      assert.notEqual(followUp, assessmentPrompt, "Recovery should target the missing evidence instead of restarting the generic prompt");
+      assert.equal(hasButton("Publish my score"), false);
+      assert.equal(writes().length, 0);
+    }
   }
   await review(score); assert.match(dialog().textContent!, /43%/); assert.match(dialog().textContent!, /exhibitions/);
   await press("Discard"); assert.equal(hasButton("Publish my score"), false);

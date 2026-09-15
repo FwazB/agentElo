@@ -1,30 +1,43 @@
 # Public AI reference
 
-Default flow: choose a username → copy the prompt into an assistant → paste its
-result → preview and publish → share the card. No scoring-kit installation or
-MCP setup is required. Matchups are optional.
+Default flow: choose a username → copy the complete prompt into an assistant →
+answer any missing-context questions → paste its final result → preview and
+publish → share the card. The copied prompt includes the rubric, so opening a
+link, installing a scoring kit, or connecting MCP is not required. Matchups are
+optional.
 
 - Public guide: https://computer-elo.vercel.app/rate.md
 - Setup and evidence help: https://computer-elo.vercel.app/connect
 - Optional remote MCP: https://computer-elo.vercel.app/mcp
 - Agent discovery text: https://computer-elo.vercel.app/llms.txt
 
-The guide, full fallback prompt, and MCP tools use
+The guide, self-contained prompt, follow-up prompt, and MCP tools use
 `packages/public-api/scoring-guide.ts`. The completed UTC week comes from the
-same helper as the API. Guide version: `computer-elo.assessment-guide.v2`.
+same helper as the API. Guide version: `computer-elo.assessment-guide.v3`.
 
 ## Evidence before scoring
 
-The assistant uses activity or a private recap the user authorizes it to see.
+The assistant first reviews relevant dated evidence already shared or explicitly
+authorized for the assessment. It should not ask again for context it already
+has. One concrete recap can support all five dimensions; multiple tools or
+conversations are not required. A recap remains self-attested evidence.
 The public guide and MCP connection grant no access to that activity. Every
 dimension needs a basis: output, focus, leverage, verification, and hygiene.
 Unobserved behavior is unknown; it must not be assigned a default score.
 
-When evidence is missing, the assistant returns only `status`, `weekId`, and a
-bounded `missing` list using documented category codes. There is no numerical
-score. The browser displays the requested evidence locally and offers no Publish
-button. It also clears a previously valid preview when a new result is reviewed
-or edited. The assistant can ask for the smallest useful examples privately.
+When evidence is missing, the assistant asks up to three concrete questions in
+normal language, waits for the user, then resumes. With no usable context, it
+asks for a short dated recap covering the five dimensions. It must not return
+result JSON while gathering evidence or demand evidence already available.
+
+Only when the user asks to finish without enough evidence, declines the follow-up,
+or cannot provide the remaining context after a follow-up does the assistant
+return `status`, `weekId`, and a bounded `missing` list. There is no numerical
+score. If that result is pasted into the site, the browser shows the missing
+areas and a **Copy follow-up** action to resume the conversation with targeted
+questions and the complete rubric. It offers no Publish button. A new or edited
+result clears any previously valid preview. Private recaps stay with the user's
+assistant; the website accepts only the final bounded JSON.
 
 A grounded result contains only `weekId`, `formScore`, `coveragePpm`, and
 `certaintyPpm`. Zero coverage or zero certainty is rejected by the browser and
