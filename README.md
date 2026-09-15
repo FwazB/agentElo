@@ -67,6 +67,11 @@ footer link and `/form`. The shared
 referee never uses these personal scores or existing Elo ratings. The legacy
 scoring rules and receipts retain their original meaning.
 
+**Share on X** opens a draft with “My AI rated me with a X/1000. What’s your Elo?”
+and the player's `antislop.org/u/<username>` link. The profile's social preview
+and downloadable PNG show the personal Form **/1000** and separate Elo rating.
+The player reviews and posts the draft themselves.
+
 ## Develop
 
 Use Node 24 and install both locked dependency trees:

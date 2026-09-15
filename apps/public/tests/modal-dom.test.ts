@@ -255,7 +255,11 @@ test("mounted score flow previews, clears stale/insufficient results, discards, 
   assert.deepEqual(writes().map(({ url, body }) => ({ url, body })), [{ url: "/api/assessment", body: score }]);
   await act(async () => pending.resolve(Response.json(player("local_player", true)))); await flush();
   assert.equal(view(), "share"); assert.match(dialog().textContent!, /849/);
-  assert.ok(dialog().querySelector('a[href^="https://twitter.com/intent/tweet?"]'));
+  const shareDraft = new URL(dialog().querySelector<HTMLAnchorElement>('a[href^="https://twitter.com/intent/tweet?"]')!.href);
+  assert.equal(shareDraft.searchParams.get("text"), "My AI rated me with a 849/1000.\nWhat’s your Elo?");
+  assert.equal(shareDraft.searchParams.get("url"), "https://antislop.org/u/local_player", "Public shares must use the canonical site even when opened on another origin");
+  await press("Copy profile link");
+  assert.equal(copied.at(-1), "https://antislop.org/u/local_player");
   assert.equal(writes().length, 1, "Publication must not enter a matchup or post to X");
   await escape(); await press("Rate my week", win.document);
   assert.equal(byId<HTMLTextAreaElement>("assessment-json").value, "");
@@ -338,10 +342,10 @@ test("pending read requests are cancelled on unmount and scroll is restored", as
 
 test("copy feedback resets when navigating to a different public profile", async () => {
   await mount({ initialProfile: { username: "alice" } }); await press("Copy profile link");
-  assert.equal(copied.at(-1), "https://computer-elo.test/u/alice"); assert.ok(hasButton("Copied"));
+  assert.equal(copied.at(-1), "https://antislop.org/u/alice"); assert.ok(hasButton("Copied"));
   await rerender({ initialProfile: { username: "bob" } });
   assert.ok(hasButton("Copy profile link"), "A previous player's copied state must not label a new link copied");
-  await press("Copy profile link"); assert.equal(copied.at(-1), "https://computer-elo.test/u/bob");
+  await press("Copy profile link"); assert.equal(copied.at(-1), "https://antislop.org/u/bob");
 });
 
 test("hash and route-prop navigation cannot interrupt an unsaved key flow", async () => {

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { AI_SYSTEMS, CONTEXT_SOURCES, type AssessmentContext } from "../../../packages/public-api/assessment-context";
 import type { EloMode, MatchReceipt, PlayerReceipt } from "../../../packages/public-api/types";
+import { PUBLIC_SITE_URL } from "../../../packages/public-api/scoring-guide";
 
 export const playerLabel = (username?: string | null) => username ? `@${username}` : "Player";
 export const playerHref = (id: string, username?: string | null) => username ? `/u/${username}` : `/player/${id}`;
@@ -56,10 +57,11 @@ export function AssessmentContextCaption({ context }: { context?: AssessmentCont
   return <p className="caption assessment-context-caption">AI: {label(AI_SYSTEMS, context.aiSystem)} · Context: {label(CONTEXT_SOURCES, context.contextSource)}</p>;
 }
 
-export function ShareActions({ username, receipt, url }: { username: string | null; receipt: PlayerReceipt | null; url: string }) {
+export function ShareActions({ username, receipt }: { username: string | null; receipt: PlayerReceipt | null }) {
   if (!username) return null;
-  const text = receipt ? `My AI rated my week ${receipt.form.score}/1000.\n${percent(receipt.form.confidence.effective_ppm)} confidence · ${receipt.week_id}.\nSelf-attested. What’s your score?` : `I’m @${username} on Computer Elo.\nWhat’s your score?`;
-  return <div className="share-actions"><a className="button primary" href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`} target="_blank" rel="noopener noreferrer">Share on X <Arrow diagonal /></a><CopyButton value={url}>Copy profile link</CopyButton><a className="text-link" href={`/u/${username}/opengraph-image`} download={`computer-elo-${username}.png`}>Download card PNG <Arrow diagonal /></a></div>;
+  const url = `${PUBLIC_SITE_URL}/u/${encodeURIComponent(username)}`;
+  const text = receipt ? `My AI rated me with a ${receipt.form.score}/1000.\nWhat’s your Elo?` : `I’m @${username} on AntiSlop.\nWhat’s your Elo?`;
+  return <div className="share-actions"><a className="button primary" href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`} target="_blank" rel="noopener noreferrer">Share on X <Arrow diagonal /></a><CopyButton value={url}>Copy profile link</CopyButton><a className="text-link" href={`/u/${username}/opengraph-image`} download={`antislop-${username}.png`}>Download card PNG <Arrow diagonal /></a></div>;
 }
 
 export function CopyButton({ value, children = "Copy", className = "button secondary small" }: { value: string; children?: ReactNode; className?: string }) {

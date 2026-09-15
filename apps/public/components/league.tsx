@@ -80,7 +80,6 @@ export function League({ initialDialog, initialProfile, surface = "legacy", init
   const [insufficientEvidence, setInsufficientEvidence] = useState<InsufficientEvidence | null>(null);
   const [preview, setPreview] = useState<PlayerReceipt | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
-  const [origin, setOrigin] = useState("");
   const dialogRef = useRef<HTMLDialogElement>(null);
   const lastFocusRef = useRef<HTMLElement | null>(null);
   const overviewRequestRef = useRef<AbortController | null>(null);
@@ -95,7 +94,6 @@ export function League({ initialDialog, initialProfile, surface = "legacy", init
   navigationBlockedRef.current = dialog === "key" || busy !== null;
   const dialogIsOpen = dialog !== null;
 
-  useEffect(() => setOrigin(window.location.origin), []);
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -373,7 +371,6 @@ export function League({ initialDialog, initialProfile, surface = "legacy", init
   const assessmentContext = assessmentPreview?.aiSystem !== undefined && assessmentPreview.contextSource !== undefined
     ? { aiSystem: assessmentPreview.aiSystem, contextSource: assessmentPreview.contextSource } : undefined;
   const draft = insufficientEvidence ? null : assessmentPreview ?? (preview ? { weekId: preview.week_id, formScore: preview.form.score, coveragePpm: preview.form.confidence.coverage_ppm, certaintyPpm: preview.form.confidence.certainty_ppm } : null);
-  const profileUrl = me ? `${origin}${playerHref(me.player.id, me.player.username)}` : "";
   const nameValid = /^[a-z][a-z0-9_]{2,19}$/.test(username);
 
   const needsUsername = me && !me.player.username;
@@ -420,7 +417,7 @@ export function League({ initialDialog, initialProfile, surface = "legacy", init
           {currentReceipt && <div className="modal-next-actions"><button className="button secondary" onClick={() => openDialog("share")}>Share current card <Arrow/></button><button className="text-link" onClick={() => openDialog("matches")}>Play a matchup</button></div>}
         </>}</>}
 
-        {dialog === "share" && <><h2 id="dialog-title" tabIndex={-1}>Your weekly score.</h2>{me && receipt ? <><div className="modal-score-card"><span className="eyebrow">@{me.player.username ?? "player"} · {receipt.week_id}</span><div className="your-form">{receipt.form.score}<small>/1000</small></div><p>Computer Form · {percent(receipt.form.confidence.effective_ppm)} confidence</p><AssessmentContextCaption context={me.player.assessmentContext}/><div className="share-card-elo">{rating(receipt.elo.scalar.rating_milli)} Elo <span>{receipt.elo.scalar.rated_matches ? `${receipt.elo.scalar.rated_matches} rated matches` : "unrated"}</span></div></div><ShareActions username={me.player.username} receipt={receipt} url={profileUrl}/><p className="caption">Your public card contains your score. Your computer history stays private. Sharing on X opens a draft for you to review.</p><ReceiptLinks receipt={receipt} playerId={me.player.id}/><div className="modal-next-actions"><button className="button secondary" onClick={() => openDialog("matches")}>Find a matchup <Arrow/></button><button className="text-link" onClick={() => openProfile({ id: me.player.id, username: me.player.username ?? undefined })}>View my profile</button></div></> : <><p>Your card is waiting for its first score.</p><button className="button primary" onClick={join}>Rate my week <Arrow/></button></>}</>}
+        {dialog === "share" && <><h2 id="dialog-title" tabIndex={-1}>Your weekly score.</h2>{me && receipt ? <><div className="modal-score-card"><span className="eyebrow">@{me.player.username ?? "player"} · {receipt.week_id}</span><div className="your-form">{receipt.form.score}<small>/1000</small></div><p>Computer Form · {percent(receipt.form.confidence.effective_ppm)} confidence</p><AssessmentContextCaption context={me.player.assessmentContext}/><div className="share-card-elo">{rating(receipt.elo.scalar.rating_milli)} Elo <span>{receipt.elo.scalar.rated_matches ? `${receipt.elo.scalar.rated_matches} rated matches` : "unrated"}</span></div></div><ShareActions username={me.player.username} receipt={receipt}/><p className="caption">Your public card contains your score. Your computer history stays private. Sharing on X opens a draft for you to review.</p><ReceiptLinks receipt={receipt} playerId={me.player.id}/><div className="modal-next-actions"><button className="button secondary" onClick={() => openDialog("matches")}>Find a matchup <Arrow/></button><button className="text-link" onClick={() => openProfile({ id: me.player.id, username: me.player.username ?? undefined })}>View my profile</button></div></> : <><p>Your card is waiting for its first score.</p><button className="button primary" onClick={join}>Rate my week <Arrow/></button></>}</>}
 
         {dialog === "matches" && <><h2 id="dialog-title" tabIndex={-1}>Your matchups.</h2>{!me ? <><p>Pick a name and publish your weekly Form to play.</p><button className="button primary" onClick={join}>Let’s start <Arrow/></button></> : <><div className="match-mode-bar"><p>Form decides the result. Matchups build your Elo.</p><ModeSwitch mode={mode} onChange={setMode}/></div>{currentReceipt ? <section className="queue-panel"><div className="queue-heading"><h3>{queued ? "Looking for your other half…" : matchedThisWeek ? "You played this week!" : "Ready, player?"}</h3>{queued && <span className="loading-mark"/>}</div><p className="caption">{queued ? "Waiting for an eligible player from the same week. You can close this window and return later." : matchedThisWeek ? "Try the other mode, or bring a fresh Form next week." : "One matchup per mode each week. Joining locks this week’s Form, even if you later leave the queue."}</p>{queued ? <button className="button secondary" disabled={busy !== null} onClick={() => void queue(true)}>{busy === "queue" ? "Leaving…" : "Leave queue"}</button> : !matchedThisWeek ? <button className="button primary" disabled={busy !== null} onClick={() => void queue()}>{busy === "queue" ? "Joining…" : "Join a matchup"}<Arrow/></button> : null}</section> : <div className="empty-state compact"><h3>First, bring this week’s Form.</h3><p>A published score is your ticket to the matchup.</p><button className="button primary" onClick={() => openDialog("rate")}>Rate this week <Arrow/></button></div>}<div className="your-matches"><h3>Your matchups</h3><MatchList matches={me.matches.filter(match => match.mode === mode)} playerId={me.player.id} usernames={me.usernames} onOpenProfile={openProfile}/></div></>}</>}
 

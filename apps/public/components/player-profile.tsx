@@ -24,10 +24,8 @@ function Profile({ endpoint, valid, embedded, onOpenProfile, onHelp }: { endpoin
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<EloMode>("scalar");
-  const [origin, setOrigin] = useState("");
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    setOrigin(window.location.origin);
     if (!valid) { setError("This player could not be found."); setLoading(false); return; }
     const controller = new AbortController();
     setLoading(true); setError(null);
@@ -39,7 +37,6 @@ function Profile({ endpoint, valid, embedded, onOpenProfile, onHelp }: { endpoin
   const receipt = data?.player.receipt;
   const state = receipt?.elo[mode];
   const matches = data?.matches.filter(match => match.mode === mode) ?? [];
-  const profileUrl = data ? `${origin}${playerHref(data.player.id, data.player.username)}` : "";
   const Container = embedded ? "section" : "main";
   const Heading = embedded ? "h2" : "h1";
   const MatchHeading = embedded ? "h3" : "h2";
@@ -53,7 +50,7 @@ function Profile({ endpoint, valid, embedded, onOpenProfile, onHelp }: { endpoin
           <div className="profile-rating form-primary"><div className="eyebrow">COMPUTER FORM</div><div className="profile-elo">{receipt?.form.score ?? "—"}<small> / 1000</small></div><p>Your week at the computer, assessed with the shared rubric.</p><AssessmentContextCaption context={data.player.assessmentContext}/><div className="profile-meta"><div><span>Confidence</span><strong>{receipt ? percent(receipt.form.confidence.effective_ppm) : "—"}</strong></div>{receipt && <><div><span>Evidence coverage</span><strong>{percent(receipt.form.confidence.coverage_ppm)}</strong></div><div><span>Evaluator certainty</span><strong>{percent(receipt.form.confidence.certainty_ppm)}</strong></div></>}</div></div>
           <div className="profile-form"><div className="profile-rating-top"><div className="eyebrow">COMPUTER ELO</div><ModeSwitch mode={mode} onChange={setMode}/></div><div className="profile-form-score">{rating(state?.rating_milli ?? 1200000)}</div><div className="mono caption">{state?.rated_matches ? `${state.rated_matches} rated matchups` : "Unrated · Starting rating"}</div><p className="caption profile-elo-explanation">{state?.rated_matches ? "A rating built through weekly matchups." : "Your first rated matchup is where your Elo story begins. Your weekly Form is already yours to share."}</p></div>
         </div>
-        <div className="profile-sharing"><div><h3>Your week, on the record.</h3><p className="caption">Share your public profile. Your private computer history stays private.</p></div><ShareActions username={data.player.username} receipt={receipt ?? null} url={profileUrl}/></div>
+        <div className="profile-sharing"><div><h3>Your week, on the record.</h3><p className="caption">Share your public profile. Your private computer history stays private.</p></div><ShareActions username={data.player.username} receipt={receipt ?? null}/></div>
         {receipt ? <div className="profile-downloads"><ReceiptLinks receipt={receipt} playerId={data.player.id}/><span className="caption">Public aggregate only.</span></div> : <Notice kind="info">This player hasn’t published a weekly Form yet.</Notice>}
         <section className="profile-matches" aria-labelledby="matches-title"><div className="subsection-heading"><MatchHeading id="matches-title">Matchups</MatchHeading><span className="mono caption">{matches.length} completed</span></div><MatchList matches={matches} playerId={data.player.id} usernames={data.usernames} onOpenProfile={onOpenProfile}/></section>
         <div className="profile-note"><strong>A score with context.</strong><p>Form reflects one week. Elo reflects matchups. Confidence reflects the limits of the evidence. Scores are self-attested; receipt fingerprints verify integrity, not evaluator truth.</p><Link className="text-link" href={embedded ? "#help" : "/kit"} onClick={event => { if (onHelp && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) { event.preventDefault(); onHelp(); } }}>How scoring works <Arrow diagonal /></Link></div>

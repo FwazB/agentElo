@@ -204,7 +204,11 @@ try {
   const svg = await call(`/api/matches/${pair.match.match_id}/card.svg`, 200);
   assert.match(svg.headers.get("content-type")!, /image\/svg\+xml/); assert.match(svg.headers.get("content-security-policy")!, /sandbox/); privateAbsent(await svg.text());
   const page = await call(`/u/${alice.username}`, 200); const html = await page.text(); privateAbsent(html);
-  assert.match(html, /870\/1000 Computer Form/); assert.equal((html.match(/<main\b/g) ?? []).length, 1); assert.match(html, /data-view="profile"/);
+  assert.match(html, /<title>@flow_alice · 870\/1000 · AntiSlop<\/title>/);
+  assert.match(html, /My AI rated me with a 870\/1000\. What’s your Elo\?/);
+  assert.match(html, /name="twitter:card" content="summary_large_image"/);
+  assert.match(html, /name="twitter:image" content="https:\/\/antislop\.org\/u\/flow_alice\/opengraph-image"/);
+  assert.equal((html.match(/<main\b/g) ?? []).length, 1); assert.match(html, /data-view="profile"/);
   const csp = page.headers.get("content-security-policy")!; const nonce = /'nonce-([^']+)'/.exec(csp)?.[1]; assert.ok(nonce);
   for (const tag of html.match(/<script\b[^>]*>/g) ?? []) assert.ok(tag.includes(`nonce="${nonce}"`));
   const png = await call(`/u/${alice.username}/opengraph-image`, 200); const bytes = Buffer.from(await png.arrayBuffer());
