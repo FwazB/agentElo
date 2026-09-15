@@ -1,7 +1,7 @@
 import { completedWeekWindow } from "./week.ts";
 import { AI_SYSTEMS, CONTEXT_SOURCES, parseAssessmentContext, type AssessmentContext } from "./assessment-context.ts";
 
-export const PUBLIC_SITE_URL = "https://computer-elo.vercel.app";
+export const PUBLIC_SITE_URL = "https://antislop.org";
 export const GUIDE_VERSION = "computer-elo.assessment-guide.v4";
 export const MISSING_EVIDENCE = {
   completed_week_activity: "No usable context from the completed week.",

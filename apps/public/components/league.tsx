@@ -5,10 +5,13 @@ import type { EloMode, Me, Overview, PlayerReceipt, QueueResult } from "../../..
 import { buildAssessmentPrompt, parseAssessmentResult, type AssessmentScore, type InsufficientEvidence } from "../../../packages/public-api/scoring-guide";
 import { api, ApiError, Arrow, AssessmentContextCaption, CopyButton, Footer, Header, MatchList, ModeSwitch, Notice, percent, rating, ReceiptLinks, ShareActions, playerHref, playerLabel } from "./shared";
 import { PlayerProfile, UserProfile } from "./player-profile";
+import { AntiSlop } from "./antislop";
+import { createGuestPlayer } from "./guest-player";
+import antislopStyles from "./antislop.module.css";
 
 type DialogView = "join" | "recover" | "key" | "rate" | "share" | "matches" | "account" | "help" | "connect" | "profile";
 type ProfileTarget = { username?: string; id?: string };
-export interface LeagueProps { initialDialog?: "connect" | "help" | "rate"; initialProfile?: ProfileTarget }
+export interface LeagueProps { initialDialog?: "connect" | "help" | "rate"; initialProfile?: ProfileTarget; surface?: "legacy" | "antislop"; initialChallengeId?: string; initialDuelId?: string }
 
 const RUBRIC = [
   ["Output & closure", "Useful things, finished.", 30],
@@ -51,7 +54,7 @@ function previewReceipt(value: unknown, weekId: string): PlayerReceipt {
   return value as PlayerReceipt;
 }
 
-export function League({ initialDialog, initialProfile }: LeagueProps = {}) {
+export function League({ initialDialog, initialProfile, surface = "legacy", initialChallengeId, initialDuelId }: LeagueProps = {}) {
   const [mode, setMode] = useState<EloMode>("scalar");
   const [overview, setOverview] = useState<Overview | null>(null);
   const [overviewError, setOverviewError] = useState<string | null>(null);
@@ -83,6 +86,7 @@ export function League({ initialDialog, initialProfile }: LeagueProps = {}) {
   const overviewRequestRef = useRef<AbortController | null>(null);
   const meRequestRef = useRef<AbortController | null>(null);
   const sessionEpochRef = useRef(0);
+  const guestBusyRef = useRef(false);
   const draftReadRef = useRef(0);
   const mountedRef = useRef(true);
   const currentModeRef = useRef(mode);
@@ -224,6 +228,21 @@ export function League({ initialDialog, initialProfile }: LeagueProps = {}) {
     if (!mountedRef.current) return;
     sessionEpochRef.current++; meRequestRef.current?.abort(); setMe(player);
   }
+  function adoptGuestPlayer(player: Me) {
+    commitMe(player); setSessionError(null); void refreshOverview();
+  }
+  async function createGuestForForm() {
+    if (guestBusyRef.current || busy || !nameValid) return;
+    const epoch = sessionEpochRef.current;
+    const isCurrent = () => mountedRef.current && epoch === sessionEpochRef.current;
+    guestBusyRef.current = true; setBusy("guest"); setActionError(null);
+    try {
+      const player = await createGuestPlayer(username, isCurrent);
+      if (!isCurrent()) return;
+      adoptGuestPlayer(player); setDialog("rate");
+    } catch (error) { if (isCurrent()) setActionError(message(error)); }
+    finally { guestBusyRef.current = false; if (mountedRef.current) setBusy(null); }
+  }
   function prepareKey(action: "create" | "rotate") {
     if (recoveryKey && action === keyAction && (action === "rotate" || username === keyUsername)) {
       setActionError(null); setDialog("key"); return;
@@ -234,7 +253,7 @@ export function League({ initialDialog, initialProfile }: LeagueProps = {}) {
   }
   function finishKeyAction(player: Me, feedback: string) {
     draftReadRef.current++;
-    commitMe(player); setSessionError(null); setDialog(keyAction === "rotate" ? "account" : "rate"); setRecoveryKey(""); setFeedback(feedback);
+    commitMe(player); setSessionError(null); setDialog(keyAction === "rotate" ? "account" : surface === "antislop" ? null : "rate"); setRecoveryKey(""); setFeedback(feedback);
     void refreshOverview();
   }
   async function createPlayer() {
@@ -252,7 +271,7 @@ export function League({ initialDialog, initialProfile }: LeagueProps = {}) {
     try {
       draftReadRef.current++;
       commitMe(await api<Me>("/session", { method: "POST", body: JSON.stringify({ token: token.trim() }) }));
-      setToken(""); setRecoveryKey(""); setKeyAttempted(false); setDialog("rate"); setSessionError(null);
+      setToken(""); setRecoveryKey(""); setKeyAttempted(false); setDialog(surface === "antislop" ? null : "rate"); setSessionError(null);
     } catch (error) { setActionError(message(error)); }
     finally { setBusy(null); }
   }
@@ -362,6 +381,7 @@ export function League({ initialDialog, initialProfile }: LeagueProps = {}) {
   const wideDialog = dialog && ["rate", "profile", "share", "matches", "help", "connect"].includes(dialog);
 
   return <>
+    {surface === "antislop" ? <AntiSlop me={me} sessionLoading={sessionLoading} onGuestPlayer={adoptGuestPlayer} onAccount={() => openDialog("account")} onOpenForm={() => openDialog(me ? "rate" : "join")} initialChallengeId={initialChallengeId} initialDuelId={initialDuelId}/> : <>
     <Header onHelp={() => openDialog("help")} onConnect={() => openDialog("connect")} onHome={() => { closeDialog(); window.scrollTo({ top: 0, behavior: scrollBehavior() }); }} action={<button className="nav-link account-link" onClick={() => me ? openDialog("account") : join()} disabled={sessionLoading}>{sessionLoading ? "One sec…" : me ? playerLabel(me.player.username) : "Let’s play"}<Arrow/></button>}/>
     <main id="main">
       <section className="hero shell" aria-labelledby="hero-title">
@@ -375,15 +395,15 @@ export function League({ initialDialog, initialProfile }: LeagueProps = {}) {
         <div className="standings-table-wrap"><table className="standings-table"><thead><tr><th scope="col">Rank</th><th scope="col">Player</th><th scope="col" className="number">Form / 1000</th><th scope="col" className="number">Elo</th><th scope="col" className="number">Confidence</th><th scope="col" className="number">Matches</th></tr></thead><tbody>{overview?.players.map(player => <tr key={player.id} className={player.id === me?.player.id ? "your-row" : ""}><td className="rank-cell">{player.rank === null ? "—" : String(player.rank).padStart(2, "0")}</td><td><button className="player-name" onClick={() => openProfile({ id: player.id, username: player.username ?? undefined })}>{playerLabel(player.username)}{player.id === me?.player.id && <span className="you-tag">you!</span>}</button></td><td className="number form-cell">{player.formScore ?? "—"}<small>{player.weekId ?? "No score yet"}</small></td><td className="number elo-cell">{rating(player.ratingMilli)}{player.ratedMatches === 0 && <small>Unrated</small>}</td><td className="number">{player.confidencePpm === null ? "—" : percent(player.confidencePpm)}</td><td className="number">{player.ratedMatches}</td></tr>)}</tbody></table>
         {loading ? <div className="empty-state" role="status"><span className="loading-mark"/><p>Waking up the scoreboard…</p></div> : overviewError ? <div className="empty-state"><h3>The scoreboard needs a minute.</h3><p>{overviewError}</p><button className="button secondary" onClick={() => { setLoading(true); void refreshOverview(); }}>Try again</button></div> : overview?.players.length === 0 ? <div className="empty-state"><h3>No scores yet.</h3><p>Published weekly scores will appear here.</p></div> : null}</div><div className="table-footer"><span className="caption">Self-attested scores. Elo rank starts after a rated matchup.</span><span className="mono caption">{overview ? `${overview.stats.players} players · ${overview.stats.matches} matchups` : "Live data unavailable"}</span></div>
       </section>
-    </main><Footer onConnect={() => openDialog("connect")}/>
+    </main><Footer onConnect={() => openDialog("connect")}/></>}
 
-    <dialog ref={dialogRef} className={`player-dialog modal-${dialog ?? "closed"}${wideDialog ? " modal-wide" : ""}`} data-view={dialog ?? "closed"} aria-labelledby="dialog-title" onCancel={event => { event.preventDefault(); closeDialog(); }} onClick={event => { if (event.target !== event.currentTarget) return; const bounds = event.currentTarget.getBoundingClientRect(); if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) closeDialog(); }} onClose={event => { if (event.currentTarget.open) return; setDialog(null); if (lastFocusRef.current?.isConnected) lastFocusRef.current.focus(); }}>
+    <dialog ref={dialogRef} className={`player-dialog modal-${dialog ?? "closed"}${wideDialog ? " modal-wide" : ""}${surface === "antislop" ? ` ${antislopStyles.legacyDialog}` : ""}`} data-view={dialog ?? "closed"} aria-labelledby="dialog-title" onCancel={event => { event.preventDefault(); closeDialog(); }} onClick={event => { if (event.target !== event.currentTarget) return; const bounds = event.currentTarget.getBoundingClientRect(); if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) closeDialog(); }} onClose={event => { if (event.currentTarget.open) return; setDialog(null); if (lastFocusRef.current?.isConnected) lastFocusRef.current.focus(); }}>
       {dialog !== "key" && <button className="dialog-close" aria-label="Close dialog" disabled={busy !== null} onClick={closeDialog}>×</button>}
       <div className="dialog-content">
         {actionError && dialog !== "key" && <Notice>{actionError}</Notice>}
         {feedback && dialog && ["rate", "share", "matches", "account"].includes(dialog) && <Notice kind="info">{feedback}</Notice>}
 
-        {dialog === "join" && <form onSubmit={event => { event.preventDefault(); if (nameValid) prepareKey("create"); }}><h2 id="dialog-title" tabIndex={-1}>Pick your username.</h2><p>A public profile for your score. No email needed.</p><label className="field-label" htmlFor="new-username">Your player name</label><div className="username-input"><span aria-hidden="true">@</span><input id="new-username" value={username} onChange={event => setUsername(event.target.value.toLowerCase().replace(/^@/, ""))} pattern="[a-z][a-z0-9_]{2,19}" minLength={3} maxLength={20} autoComplete="username" autoCapitalize="none" spellCheck={false} required aria-describedby="new-name-help"/></div><p id="new-name-help" className="caption">3–20 letters, numbers, or underscores. Start with a letter. Public and permanent, so pick a keeper.</p><button className="button primary full-width" disabled={busy !== null || !nameValid}>That’s me <Arrow/></button><button type="button" className="text-link recovery-link" disabled={busy !== null} onClick={() => { setDialog("recover"); setActionError(null); }}>Already in the club? Sign in.</button></form>}
+        {dialog === "join" && <form onSubmit={event => { event.preventDefault(); if (nameValid) { if (surface === "antislop") void createGuestForForm(); else prepareKey("create"); } }}><h2 id="dialog-title" tabIndex={-1}>Pick your username.</h2><p>{surface === "antislop" ? "A public player name for your Form. No email or password." : "Your public player profile. No email needed."}</p><label className="field-label" htmlFor="new-username">Your player name</label><div className="username-input"><span aria-hidden="true">@</span><input id="new-username" value={username} disabled={busy !== null} onChange={event => setUsername(event.target.value.toLowerCase().replace(/^@/, ""))} pattern="[a-z][a-z0-9_]{2,19}" minLength={3} maxLength={20} autoComplete="username" autoCapitalize="none" spellCheck={false} required aria-describedby="new-name-help"/></div><p id="new-name-help" className="caption">3–20 letters, numbers, or underscores. Start with a letter. Public and permanent, so pick a keeper.</p><button className="button primary full-width" disabled={busy !== null || !nameValid}>{busy === "guest" ? "Getting your player ready…" : "That’s me"} <Arrow/></button><button type="button" className="text-link recovery-link" disabled={busy !== null} onClick={() => { setDialog("recover"); setActionError(null); }}>{surface === "antislop" ? "Restore an existing player" : "Already in the club? Sign in."}</button></form>}
 
         {dialog === "recover" && <form onSubmit={event => void recover(event)}><h2 id="dialog-title" tabIndex={-1}>Welcome back.</h2><p>Use the private recovery key you saved with your profile.</p><label className="field-label" htmlFor="recovery-token">Recovery key</label><input id="recovery-token" className="text-input" type="password" value={token} onChange={event => setToken(event.target.value)} autoComplete="off" autoCapitalize="none" spellCheck={false} required maxLength={256}/><button className="button primary full-width" disabled={busy !== null || !token.trim()}>{busy === "recover" ? "Signing in…" : "Let me in"}<Arrow/></button><button type="button" className="text-link recovery-link" disabled={busy !== null} onClick={() => { setDialog("join"); setActionError(null); }}>Create a new profile</button></form>}
 
@@ -408,7 +428,7 @@ export function League({ initialDialog, initialProfile }: LeagueProps = {}) {
 
         {dialog === "help" && <><h2 id="dialog-title" tabIndex={-1}>How to play.</h2><p>Your own AI reflects on your completed week, using evidence you authorize. You decide whether to publish its score.</p><div className="help-steps"><article><span className="step-chip">1</span><h3>Ask your AI.</h3><p>It uses the context it already has to rate your week directly. No context at all? Try an existing chat that knows your work.</p></article><article><span className="step-chip">2</span><h3>Get your Form.</h3><p>Your weekly score out of 1000, plus confidence. Paste the small result, review it, and choose to publish.</p></article><article><span className="step-chip">3</span><h3>Share or play.</h3><p>Your profile is ready to share immediately. Elo starts at 1200 and changes through opted-in weekly matchups.</p></article></div><details className="rubric-details"><summary>What actually counts? <span aria-hidden="true">+</span></summary><div className="rubric-list">{RUBRIC.map(([name, description, weight]) => <div className="rubric-row" key={name}><div><h3>{name}</h3><p>{description}</p></div><strong className="mono">{weight}<span>%</span></strong></div>)}</div><p className="caption">Confidence is the lower of evidence coverage and evaluator certainty. Zero coverage or certainty means no score. Grounded scores below 50% confidence can be shared, but matchups are exhibitions with no Elo change. Scores are self-attested and evaluators may disagree; fingerprints verify receipt integrity, not whether an assessment is true. This is a self-improvement game, not a measure of intelligence, worth, or employability.</p></details><div className="modal-next-actions"><button className="button primary" onClick={join}>Okay, rate my week <Arrow/></button><button className="text-link" onClick={() => openDialog("connect")}>Connect my AI / scoring kit</button></div></>}
 
-        {dialog === "connect" && <><h2 id="dialog-title" tabIndex={-1}>Connect your AI.</h2><p>The copied prompt includes the full rubric. Your AI uses its available context to give you a direct rating.</p><section className="connect-option"><h3>The simple way</h3><p>Paste the prompt from “Rate my week” into an AI that knows you and bring back its score. No interview, connection, or link access is needed. The public guide below has the same rules.</p><label className="field-label" htmlFor="reference-url">Public scoring guide</label><input id="reference-url" className="text-input endpoint-input" readOnly value="https://computer-elo.vercel.app/rate.md"/><CopyButton value="https://computer-elo.vercel.app/rate.md">Copy guide link</CopyButton></section><details className="connect-option"><summary>Optional: add a remote MCP server</summary><p>If your AI supports remote MCP, add this URL in its connector settings. Authentication: none. It provides the public guide and prompt; it does not read activity or publish scores.</p><label className="field-label" htmlFor="mcp-url">MCP server URL</label><input id="mcp-url" className="text-input endpoint-input" readOnly value="https://computer-elo.vercel.app/mcp"/><CopyButton value="https://computer-elo.vercel.app/mcp">Copy MCP URL</CopyButton><p className="caption">Never put your recovery key in your AI or connector settings.</p></details><details className="advanced-import"><summary>Advanced: download the scoring kit</summary><p className="caption">A local CLI, the full rubric, and receipt tools. Node.js 22+ required. Your own evidence stays on your device.</p><a className="button secondary" href="/computer-elo-kit.zip" download>Download scoring kit <Arrow diagonal/></a></details><div className="evidence-needed"><strong>Your context stays with your AI.</strong><p>Use an existing chat, saved memory, or activity you already authorized. The AI can express limited context through lower confidence. With no usable context at all, it should return no score instead of inventing one.</p></div><button className="button primary" onClick={join}>Back to my score <Arrow/></button></>}
+        {dialog === "connect" && <><h2 id="dialog-title" tabIndex={-1}>Connect your AI.</h2><p>The copied prompt includes the full rubric. Your AI uses its available context to give you a direct rating.</p><section className="connect-option"><h3>The simple way</h3><p>Paste the prompt from “Rate my week” into an AI that knows you and bring back its score. No interview, connection, or link access is needed. The public guide below has the same rules.</p><label className="field-label" htmlFor="reference-url">Public scoring guide</label><input id="reference-url" className="text-input endpoint-input" readOnly value="https://antislop.org/rate.md"/><CopyButton value="https://antislop.org/rate.md">Copy guide link</CopyButton></section><details className="connect-option"><summary>Optional: add a remote MCP server</summary><p>If your AI supports remote MCP, add this URL in its connector settings. Authentication: none. It provides the public guide and prompt; it does not read activity or publish scores.</p><label className="field-label" htmlFor="mcp-url">MCP server URL</label><input id="mcp-url" className="text-input endpoint-input" readOnly value="https://antislop.org/mcp"/><CopyButton value="https://antislop.org/mcp">Copy MCP URL</CopyButton><p className="caption">Never put your recovery key in your AI or connector settings.</p></details><details className="advanced-import"><summary>Advanced: download the scoring kit</summary><p className="caption">A local CLI, the full rubric, and receipt tools. Node.js 22+ required. Your own evidence stays on your device.</p><a className="button secondary" href="/computer-elo-kit.zip" download>Download scoring kit <Arrow diagonal/></a></details><div className="evidence-needed"><strong>Your context stays with your AI.</strong><p>Use an existing chat, saved memory, or activity you already authorized. The AI can express limited context through lower confidence. With no usable context at all, it should return no score instead of inventing one.</p></div><button className="button primary" onClick={join}>Back to my score <Arrow/></button></>}
 
         {dialog === "profile" && <><h2 id="dialog-title" tabIndex={-1}>Player profile.</h2>{profileTarget?.username ? <UserProfile username={profileTarget.username} embedded onOpenProfile={openProfile} onHelp={() => openDialog("help")}/> : profileTarget?.id ? <PlayerProfile id={profileTarget.id} embedded onOpenProfile={openProfile} onHelp={() => openDialog("help")}/> : <Notice>This player could not be found.</Notice>}<div className="modal-next-actions"><button className="button secondary" onClick={join}>Get my own score <Arrow/></button><button className="text-link" onClick={() => openDialog("help")}>How scoring works</button></div></>}
       </div>

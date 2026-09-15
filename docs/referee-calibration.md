@@ -1,8 +1,11 @@
-# Offline referee calibration
+# Referee calibration and offline replay
 
-The `packages/referee` module prepares requests and evaluates supplied judgments.
-It makes no network calls and writes no ratings or production data. Every
+The referee CLI prepares packets and evaluates supplied judgments without
+network calls or writes to production data. The package also contains the live
+`gateway.ts` adapter used by authenticated, approved AntiSlop duels. Every
 adjudication has `ratingEligible: false`; every evaluation is `pilot_only`.
+The live adapter does not establish human calibration. See
+[live operations](antislop-operations.md) for its configuration and limits.
 
 Use Node 24. Run `npm ci --ignore-scripts`, then `npm run test:referee` and
 `npm run typecheck` from the repository root.
@@ -18,31 +21,40 @@ Use Node 24. Run `npm ci --ignore-scripts`, then `npm run test:referee` and
 | `window` | `startsAt` and `endsAt`, exactly seven elapsed days apart |
 | `summary` | Private recap, at most 4,000 UTF-8 bytes |
 | `accomplishments` | 1–5 items with an ID, outcome and existing evidence IDs |
-| `evidence` | 1–10 items with an ID, kind, excerpt and occurrence timestamp |
+| `evidence` | 1–10 items with an ID, kind, excerpt and occurrence date or timestamp |
 | `refereeConsent` | Explicit `approved: true` and `approvedAt` timestamp |
 | `publicSummary` | `null`, or separately approved `text` and `approvedAt` |
 
 Evidence kinds are `artifact`, `check` and `attestation`. These describe what was
 submitted, not verified provenance. Excerpts are bounded to 6,000 UTF-8 bytes and
 each accomplishment's outcome to 2,000. The total normalized entry is at most
-64 KiB. Dates use canonical UTC millisecond strings, such as
-`2026-09-15T00:00:00.000Z`; evidence must fall in `[startsAt, endsAt)`, and approval
-must occur at or after the end of the window. Entries can end at any time of day.
-The offline parser does not validate timestamps against a live server clock.
+64 KiB. Windows and approvals use canonical UTC millisecond strings, such as
+`2026-09-15T00:00:00.000Z`. Exact evidence timestamps fall in `[startsAt, endsAt)`.
+Evidence can instead retain a real `YYYY-MM-DD` source date: its nominal UTC day
+must overlap the window, but its actual hour and timezone remain unknown. The
+judge preserves that uncertainty, including on boundary days. Never manufacture
+a timestamp from a date. Approval occurs at or after the window end. Entries can
+end at any time of day; the offline parser imposes no live-clock freshness policy.
 
 Snapshots are detached from caller input. Their SHA-256 fingerprints bind the
 content, metadata and approvals; they are not signatures or proof of consent.
-A future authenticated ingestion service must record the actual approval event,
-check freshness and store the immutable approved snapshot.
+The implemented ingestion service authenticates the account, requires explicit
+referee approval, supplies identity and approval timestamps, checks that the
+window ended within the last 24 hours, and stores the immutable snapshot.
+`antislop.entry-draft.v1` carries no account identity or consent and requires
+`publicSummary: null`; insufficient-context responses cannot be submitted as work.
 
 `blindEntry` removes account/entry identifiers, consent and public text. It
 renames local accomplishment and evidence identifiers to `a1`/`e1` and so on.
-Free text can still identify a person: the input-review flow must help players
-redact it. The first version never retrieves URLs or external files automatically.
+Free text can still identify a person: the preparation prompt requests redaction
+and the browser shows the material before upload. The referee never retrieves
+URLs or external files automatically.
 
 `publicEntrySummary` returns only the separately approved public text and entry
 ID, or `null`. It never derives public text from the recap, evidence, or referee
-explanations. A public renderer must still escape content appropriately.
+explanations. The live API additionally publishes player/entry metadata and
+structured duel results under separate challenge opt-in. Raw explanations and
+opponent evidence remain private; public renderers escape text.
 
 ## Synthetic smoke example
 
@@ -80,11 +92,12 @@ npm run --silent referee -- packet \
 Each packet includes request messages, an order, a judge fingerprint, and a pair
 fingerprint. The judge fingerprint covers the config, exact system-prompt bytes,
 and aggregation-policy version. Bump that version when changing the two-order
-resolution rule. Any of those changes creates a different identity. The config restricts this
-version to calibration, zero temperature and bounded output tokens. A provider
-adapter must map these fields to provider options and use an actual pinned model
-snapshot; rejecting obvious `latest` aliases is not a provider-version guarantee.
-Zero temperature does not guarantee identical outputs.
+resolution rule. Any of those changes creates a different identity. The config
+restricts this version to calibration, zero temperature and bounded output
+tokens. The live adapter fixes its model ID, Alibaba provider route and strict
+JSON schema. Neither a fixed model ID nor rejection of obvious `latest` aliases
+guarantees immutable provider weights. Zero temperature does not guarantee
+identical outputs.
 
 A trusted runner must preserve packet metadata and wrap the model's JSON verdict:
 
@@ -151,8 +164,9 @@ mixed judge fingerprints, conflicting entry ownership and leakage across splits.
 Run metadata is declared by the operator: this module does not independently
 verify that labels came from humans or bind them to provider request logs. Keep
 the approved entries, response envelopes and manifest mapping in the private
-evaluation archive; authenticated runner provenance remains part of the next
-implementation stage.
+evaluation archive. The live API binds both responses to the claimed pair and
+configuration, but this does not verify the origin of human labels or prove that
+the provider's underlying weights remained unchanged.
 
 Reports separate calibration from holdout and include:
 
@@ -174,9 +188,10 @@ Chatbot Arena](https://arxiv.org/html/2306.05685v4).
 
 ## Before ranked release
 
-Continue in the same feature PR: select and calibrate the provider, implement
-approved evidence ingestion and retention/deletion, authenticate jobs and bind
-run logs to entries, add participant-based match/replay controls and a
-server-authoritative new-season ledger, and build the evidence-review and duel
-sharing flow. Keep the existing Form and Elo history interpretable. Model or
-prompt changes require fresh evaluation and an explicit season/version decision.
+The pilot already includes approved ingestion, durable claims, response binding,
+content/pair replay controls and the evidence-review/sharing flow. It still must
+not change ratings. Before a separate ranked season, obtain real human labels
+and held-out calibration evidence, define retention/deletion and stronger abuse
+controls, and review a server-authoritative ranked ledger. Preserve existing
+Form and Elo history. Model, provider, prompt or aggregation changes require
+fresh evaluation and an explicit season/version decision.

@@ -2,77 +2,72 @@
 
 **Show your work → duel anytime → share the challenge.**
 
-AntiSlop is a game for people using AI and other tools to make useful things.
-A shared referee compares the evidence in two entries. Personal assistants help
-prepare entries; their self-assigned scores do not determine the match outcome.
-The competition measures demonstrated work under a published rubric. It does
-not establish a person's worth or prove that their account of work is true.
+AntiSlop is an implemented pilot for people using AI and other tools to make
+useful things. A shared referee compares two entries under the same rubric.
+Personal assistants prepare evidence; their self-assigned scores do not decide
+the outcome. This compares demonstrated work, not a person's worth, and does not
+prove that a submission is truthful or free of AI slop.
 
-## Cadence
+## On-demand play
 
-- Each entry describes a rolling seven-day evidence window ending at its
-  snapshot time. This supplies context for substantial work and quieter days.
-- Players can approve a new snapshot whenever they have work to include. There
-  is no ISO-week boundary or calendar reset in the new entry contract.
-- Duels are on demand. A frozen entry can face multiple different opponents
-  without requiring the player to invent new work between matches.
-- Exact match retries return the recorded result. Ranked rematch restrictions
-  belong to the participant pair, so new entry IDs or rewritten text cannot
-  reset them. Their limits will be selected from pilot evidence, not a weekly
-  play restriction.
-- A weekly recap summarizes activity; it does not control access to play.
+- Each entry covers exactly seven elapsed days ending at its snapshot time.
+  There is no ISO-week gate. Submission and new duels require a window ending
+  within the last 24 hours; entries used for a new duel must also be that recent.
+- Preserve exact timestamps or the source's calendar-date precision. A boundary
+  date can overlap the window without proving the work happened inside it.
+- Reuse a frozen entry against different opponents. Identical normalized work
+  cannot be resubmitted just by changing IDs, order, window or sharing metadata.
+- The same content pair in either direction returns its existing duel within
+  the season. One durable judging claim prevents a fresh model run on retry.
+- Pilot caps are ten duels per participant per UTC day, 100 globally, and one
+  in-flight duel per participant. These are capacity controls, not a weekly
+  scoring requirement or proof of unique people.
 
-## First-use and sharing flow
+## One-page flow
 
-1. Prepare a short recap with selected evidence.
-2. Review the exact material to share with the referee and approve it.
-3. Enter a matchup or send a friend a direct challenge link.
-4. Receive a verdict and a short explanation.
-5. Choose **New opponent**, **Challenge a friend**, or **Share**.
+The Pollen-inspired pop-art presentation uses the main page for the arena and
+recent results, with shared modals for preparation, results, accounts and Form.
+Routes open those states rather than separate competing product flows:
 
-A challenge link opens that matchup with an entry preview and an **Accept
-challenge** action. Private evidence and referee explanations do not become
-public automatically. Public text requires its own explicit review and approval.
+| Route | State |
+| --- | --- |
+| `/` | Start a duel, challenge a friend, arena and recent duels |
+| `/challenge/<entryId>` | Public invitation preview and accept action |
+| `/duel/<duelId>` | Pending, judging, completed or failed duel result |
+| `/form` | Existing personal Form workflow |
 
-The growth measure is completed duels that produce another completed duel through
-a shared challenge. Record invitation opens, acceptance, completion, further
-invitations, time to first verdict, and repeat participation to explain that rate.
-An empty queue needs an honest waiting/invitation state; invented opponents or
-scores would undermine the premise.
+1. Copy the server's preparation prompt and use existing authorized AI context.
+2. Paste the draft; local preview uploads nothing. Review every evidence excerpt.
+3. Approve referee processing and separately allow public challenges/results.
+4. Challenge an arena entry or share a friend invitation. An empty arena shows
+   an invitation state; it never manufactures an opponent.
+5. Receive the structured verdict and reason. Share the result or meet another
+   opponent. A failed or expired attempt stays unrated and is not rerolled.
 
-## Competition
+Optional public summary text is written and approved separately. Challenge opt-in
+makes player metadata, dates and structured duel outcomes public; it does not
+release private evidence or raw referee explanations. Pausing challenges stops
+new matches and arena listing, while previously approved public records remain.
 
-The shared rubric evaluates demonstrated completion, usefulness, quality and
-checks. Focus, hours worked and tool usage volume are outside the referee's
-judgment. Concise fixes, maintenance and learning applied to an outcome can
-compete. Missing information differs from evidence of weak or unfinished work.
+## Same referee, both orders
 
-Every match receives independent A/B and B/A judgments with the same frozen
-provider snapshot, rubric, prompt, inference settings and aggregation policy.
-The outcomes are A wins, B wins, draw or unrated. A supported draw has a result of
-0.5 and can move Elo. Insufficient evidence, incomparable entries or conflicting
-order judgments are unrated and produce no rating update.
+The rubric considers completion, usefulness, quality and checks. Hours, focus,
+tool brands, personal Form and Elo are outside its judgment. Concise fixes,
+maintenance and applied learning can compete; missing information differs from
+documented weak or unfinished results.
 
-The current Form score remains a personal assessment. Existing ratings and
-receipts retain their original meaning. Referee-based ranked play starts in a
-separate season and updates Elo only through its recorded, server-authoritative
-match results. A provisional label alone does not authorize an untested judge.
+Each admitted duel receives A/B and B/A judgments with the same configuration,
+prompt and aggregation rule. Outcomes are A wins, B wins, draw or unrated. Order
+disagreement, insufficient evidence and incomparable entries stay unrated.
+Refusals, malformed responses and timeouts produce a failed, unrated attempt.
+The fixed provider/model ID is an operating choice, not a guarantee of immutable
+weights or referee accuracy.
 
-## Delivery in one feature PR
+**Every pilot result has `ratingEligible: false`; no AntiSlop duel changes Elo.**
+A supported draw is a draw, but has no rating effect in this pilot. Personal Form
+and historical ratings retain their original meaning. A future ranked season
+requires actual human calibration and its own reviewed ledger/version decision.
 
-All AntiSlop work stays in the primary checkout on `feat/antislop` and in one
-feature PR. The scoring-recovery fix is a separate PR.
-
-The first implementation is the offline foundation:
-
-- Strict, bounded entry snapshots with evidence links and separate public text.
-- Metadata-blind request packets and response-to-pair/configuration binding.
-- Conservative resolution of order disagreement.
-- Calibration reports with human disagreement, repeatability, order consistency,
-  abstention and denominators, reported separately on calibration and holdout sets.
-- Synthetic smoke fixtures that cannot establish referee quality.
-
-The same feature PR can then carry the provider adapter, evidence review UI,
-private storage lifecycle, on-demand matching, challenge links, duel cards and
-new-season ledger after their contracts and calibration evidence are ready.
-See [the calibration workflow](referee-calibration.md) for the next concrete step.
+The implementation stays in one AntiSlop feature PR in the primary checkout.
+See [operations](antislop-operations.md) for the live adapter, storage and release
+limits, and [calibration](referee-calibration.md) for the remaining human evidence.

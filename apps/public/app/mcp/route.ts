@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 export const maxDuration = 10;
 export const dynamic = "force-dynamic";
 
-const origins = [PUBLIC_SITE_URL];
+const origins = [PUBLIC_SITE_URL, "https://computer-elo.vercel.app"];
 for (const deployment of [process.env.VERCEL_URL, process.env.VERCEL_PROJECT_PRODUCTION_URL]) {
   if (deployment && /^[a-z0-9.-]+$/.test(deployment)) origins.push(`https://${deployment}`);
 }

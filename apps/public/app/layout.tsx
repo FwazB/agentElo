@@ -5,22 +5,23 @@ import "./globals.css";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://computer-elo.vercel.app"),
-  title: { default: "Computer Elo — Your week. Your rating.", template: "%s · Computer Elo" },
-  description: "Rate your week at the computer. Choose your username, share your Computer Form, and build your Elo. Your activity stays private.",
+  metadataBase: new URL("https://antislop.org"),
+  title: { default: "AntiSlop — Show your work.", template: "%s · AntiSlop" },
+  description: "Less slop. More proof. Bring your last seven days, challenge a friend, and meet the same referee. AI assistance welcome.",
+  alternates: { canonical: "https://antislop.org" },
   openGraph: {
     type: "website",
-    siteName: "Computer Elo",
-    url: "https://computer-elo.vercel.app",
-    title: "Computer Elo — How was your week?",
-    description: "Ask your AI to rate your week. Bring back one score to share. Real evidence needed; your history stays private.",
-    images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: "Computer Elo. How was your week? Ask your AI. Share your score. Your history stays private." }],
+    siteName: "AntiSlop",
+    url: "https://antislop.org",
+    title: "AntiSlop — Show your work.",
+    description: "Bring your last seven days. Challenge a friend. Same referee.",
+    images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: "AntiSlop. Show your work. Less slop. More proof." }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Computer Elo — How was your week?",
-    description: "Ask your AI to rate your week. Bring back one score to share. Real evidence needed; your history stays private.",
-    images: [{ url: "/opengraph-image", alt: "Computer Elo. How was your week? Ask your AI. Share your score. Your history stays private." }],
+    title: "AntiSlop — Show your work.",
+    description: "Bring your last seven days. Challenge a friend. Same referee.",
+    images: [{ url: "/opengraph-image", alt: "AntiSlop. Show your work. Less slop. More proof." }],
   },
   robots: { index: true, follow: true },
 };

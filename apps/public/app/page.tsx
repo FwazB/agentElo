@@ -1,3 +1,3 @@
 import { League } from "../components/league";
 
-export default function Page() { return <League />; }
+export default function Page() { return <League surface="antislop" />; }

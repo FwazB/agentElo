@@ -4,6 +4,8 @@ import { matchCardSvg, playerCardSvg } from "../../packages/elo-engine/src/cards
 import { parseJsonText } from "../../packages/elo-engine/src/canonical.ts";
 import type { EloMode } from "../../packages/elo-engine/src/constants.ts";
 import { ApiError, type Store } from "./store.ts";
+import { handleAntislop } from "./antislop/http.ts";
+import type { AntislopStore } from "./antislop/store.ts";
 
 const MAX_BODY_BYTES = 16_384;
 const digest = (value: string) => createHash("sha256").update(value).digest();
@@ -90,9 +92,10 @@ export interface ApiServerOptions {
   serviceKey: string;
   now?: () => number;
   bodyTimeoutMs?: number;
+  antislop?: AntislopStore;
 }
 
-export function createApiServer({ store, serviceKey, now = Date.now, bodyTimeoutMs = 5_000 }: ApiServerOptions) {
+export function createApiServer({ store, serviceKey, now = Date.now, bodyTimeoutMs = 5_000, antislop }: ApiServerOptions) {
   if (serviceKey.length < 32) throw new Error("SERVICE_KEY must contain at least 32 characters.");
   if (!Number.isFinite(bodyTimeoutMs) || bodyTimeoutMs <= 0) throw new Error("Body timeout must be positive.");
   const expectedKey = digest(serviceKey);
@@ -130,6 +133,12 @@ export function createApiServer({ store, serviceKey, now = Date.now, bodyTimeout
           throw new ApiError(401, "Invalid account token.");
         }
       };
+
+      if (url.pathname.startsWith("/v1/antislop/")) {
+        if (!antislop) throw new ApiError(503, "The arena is temporarily unavailable.");
+        if (await handleAntislop(req, res, url, { store: antislop, account, confirmAccount, bodyTimeoutMs })) return;
+        throw new ApiError(404, "Route not found.");
+      }
 
       if (url.pathname === "/v1/overview" && req.method === "GET") {
         query(url, ["mode"]);

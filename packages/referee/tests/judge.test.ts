@@ -6,7 +6,7 @@ import { adjudicatePair, buildJudgePacket, judgeFingerprint, normalizeOutcome, p
 
 const config: JudgeConfig = {
   version: "antislop.judge-config.v1", seasonId: "synthetic-pilot", provider: "offline",
-  modelSnapshot: "synthetic-fixture-v1", rubricVersion: "antislop.work-evidence.v1", promptVersion: "antislop.referee-prompt.v1",
+  modelSnapshot: "synthetic-fixture-v1", rubricVersion: "antislop.work-evidence.v1", promptVersion: "antislop.referee-prompt.v2",
   temperature: 0, maxOutputTokens: 2000, phase: "calibration",
 };
 

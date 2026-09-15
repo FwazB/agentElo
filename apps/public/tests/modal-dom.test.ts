@@ -52,14 +52,14 @@ const { createRoot } = await import("react-dom/client");
 const requirePublic = createRequire(new URL("../package.json", import.meta.url));
 const bundle = await build({
   entryPoints: [fileURLToPath(new URL("../components/league.tsx", import.meta.url))],
-  bundle: true, write: false, format: "esm", platform: "node", jsx: "automatic", logLevel: "silent",
+  bundle: true, write: false, format: "esm", platform: "node", jsx: "automatic", logLevel: "silent", loader: { ".module.css": "empty" },
   plugins: [{ name: "dom-navigation-boundary", setup(builder) {
     builder.onResolve({ filter: /^react(?:\/.*)?$/ }, args => ({ path: pathToFileURL(requirePublic.resolve(args.path)).href, external: true }));
     builder.onResolve({ filter: /^next\/link$/ }, () => ({ path: "next-link", namespace: "test-boundary" }));
     builder.onLoad({ filter: /.*/, namespace: "test-boundary" }, () => ({ loader: "js", contents: `import{createElement}from"react";export default function Link({children,...props}){return createElement('a',props,children)}` }));
   } }],
 });
-const { League } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0]!.text).toString("base64")}`);
+const { League } = await import(`data:text/javascript;base64,${Buffer.from(`${bundle.outputFiles[0]!.text}\n//# sourceURL=league-test-bundle.js`).toString("base64")}`);
 
 const weekId = "2026-W37";
 const playerId = `p_${"1".repeat(32)}`;
@@ -100,7 +100,7 @@ async function mount(props: Record<string, unknown> = {}, options: { signedIn?: 
   await flush();
 }
 async function rerender(props: Record<string, unknown>) { await act(async () => { root!.render(createElement(League, props)); }); await flush(); }
-function dialog() { const element = win.document.querySelector("dialog")!; assert.ok(element); return element; }
+function dialog() { const element = win.document.querySelector<HTMLDialogElement>("dialog[data-view]")!; assert.ok(element); return element; }
 function view() { return dialog().getAttribute("data-view"); }
 function byId<T extends HTMLElement = HTMLElement>(id: string): T { const element = win.document.getElementById(id); assert.ok(element, `Missing #${id}`); return element as T; }
 function findButton(label: string, container: ParentNode = dialog().open ? dialog() : win.document): HTMLButtonElement {
@@ -161,6 +161,27 @@ test("real signup requires saving a key; lost responses preserve it for retry an
   assert.equal(win.localStorage.length + win.sessionStorage.length, 0);
   assert.ok(!win.location.href.includes(key));
   assert.ok(!win.document.querySelector("main")!.textContent!.includes(key));
+});
+
+test("AntiSlop guests open Form with only a player name, preserving the separate legacy key flow", async () => {
+  const pendingClaim = deferred<Response>();
+  handler = request => {
+    if (request.url === "/api/antislop/arena") return Response.json({ serverNow: "2026-09-15T12:30:00.000Z", entries: [], duels: [], season: { phase: "pilot", ratingEligible: false }, limits: { duelsPerPlayerPerDay: 10 } });
+    if (request.url === "/api/antislop/me") return Response.json({ entries: [], duels: [], quota: { used: 0, remaining: 10, inFlight: 0 } });
+    if (request.url === "/api/guest/session") return Response.json({ ok: true });
+    if (request.url === "/api/guest/player") return pendingClaim.promise;
+  };
+  await mount({ surface: "antislop" }, { signedIn: false, strict: true });
+  await press("Computer Form", win.document); assert.equal(view(), "join");
+  await type("new-username", "local_player"); await press("That’s me");
+  assert.equal(view(), "join"); assert.equal(findButton("Getting your player ready").disabled, true);
+  assert.equal(byId<HTMLInputElement>("new-username").disabled, true);
+  await press("Getting your player ready");
+  assert.deepEqual(writes().map(({ url, body }) => ({ url, body })), [{ url: "/api/guest/session", body: {} }, { url: "/api/guest/player", body: { username: "local_player" } }]);
+  await act(async () => pendingClaim.resolve(Response.json(player()))); await flush();
+  assert.equal(view(), "rate"); assert.ok(hasButton("Copy my prompt"));
+  assert.equal(win.document.getElementById("new-recovery-key"), null);
+  assert.equal(win.localStorage.length + win.sessionStorage.length, 0);
 });
 
 test("recovery and key rotation use real form events and retain a lost-response replacement", async () => {

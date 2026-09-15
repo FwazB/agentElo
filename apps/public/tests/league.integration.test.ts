@@ -59,7 +59,7 @@ test("two public browser sessions import, consent, match, recover and download r
   assert.equal((await rotated.json()).recoveryKey, replacementToken);
   const revoked = await call("me", "GET", undefined, cookieA);
   assert.equal(revoked.status, 401);
-  assert.match(revoked.headers.get("set-cookie")!, /Max-Age=0/);
+    assert.equal(revoked.headers.get("set-cookie"), null);
   const recoveredRotation = await call("session", "POST", { token: replacementToken });
   assert.equal((await recoveredRotation.json()).player.receipt.elo.scalar.rated_matches, 1);
 });

@@ -22,7 +22,7 @@ ELO_SERVICE_KEY=<the same private service key>
 
 Generate the key locally and enter it in each hosting provider's server environment settings. Never use a `NEXT_PUBLIC_` name, commit the value, or add it to GitHub pull-request workflows. Production requires HTTPS to the API. For local development, the template uses `http://127.0.0.1:8787`; the API creates its local database directory outside production. Neither app automatically loads a repository-root env file: export the variables into the process environment or use Node's `--env-file` option.
 
-For example, after filling an ignored `.env.local`, start the API with `node --env-file=.env.local --import tsx apps/api/server.ts` and the frontend in another terminal with `node --env-file=.env.local apps/public/node_modules/next/dist/bin/next dev apps/public`. Use `http://localhost:3000` in development.
+For example, after filling an ignored `.env.local`, start the API with `node --env-file=.env.local --import tsx apps/api/server.ts`. For Next.js, export its server variables into the shell and run `npm run public:dev`; avoid propagating Node’s `--env-file` flag through Next.js child processes. Use `http://localhost:3000` in development.
 
 ## Railway
 
@@ -36,7 +36,7 @@ Select the intended project, environment and service with the Railway CLI before
 
 Set the root directory to `apps/public`, Node version to 24, and enable source files outside the root. `vercel.json` installs the root and frontend dependencies; `npm run build` generates the scoring kit and builds Next.js. Configure the two server environment variables above. Wire preview deployments to a separate test backend if needed; do not expose production credentials to untrusted previews.
 
-The public brand/reference URLs currently target `computer-elo.vercel.app`. A fork using another domain must update `packages/public-api/scoring-guide.ts`, public profile metadata and reference links before publishing.
+The public brand/reference URLs currently target `antislop.org`. A fork using another domain must update `packages/public-api/scoring-guide.ts`, public profile metadata and reference links before publishing.
 
 ## Release checks
 

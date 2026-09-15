@@ -33,7 +33,7 @@ async function loadComponent(relative: string) {
   `;
   const bundle = await build({
     entryPoints: [path], bundle: true, write: false, format: "esm", platform: "node",
-    jsx: "automatic", jsxImportSource: "probe-jsx", logLevel: "silent",
+    jsx: "automatic", jsxImportSource: "probe-jsx", logLevel: "silent", loader: { ".module.css": "empty" },
     plugins: [{ name: "component-probe", setup(builder) {
       builder.onResolve({ filter: /^(react|next\/link|probe-jsx\/jsx-runtime)$/ }, args => ({ path: args.path, namespace: "probe" }));
       builder.onLoad({ filter: /.*/, namespace: "probe" }, args => ({ loader: "js", contents:

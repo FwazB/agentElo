@@ -11,9 +11,12 @@ import { createServer as portServer, type AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { createAntislopStore } from "../apps/api/antislop/store.ts";
 import { createApiServer } from "../apps/api/http.ts";
 import { createStore } from "../apps/api/store.ts";
 import { validateMatchReceipt, validatePlayerReceipt } from "../packages/elo-engine/src/receipts.ts";
+import type { AntiSlopMe, DuelView, OwnedEntry } from "../packages/public-api/antislop.ts";
+import type { ReadyEntryDraft } from "../packages/referee/drafts.ts";
 
 const root = resolve(import.meta.dirname, "..");
 const scratch = mkdtempSync(join(tmpdir(), "elo-production-flows-"));
@@ -25,13 +28,15 @@ const databasePath = join(scratch, "league.sqlite");
 const now = new Date();
 let rateTime = now.getTime();
 let store: ReturnType<typeof createStore> | undefined;
+let antislop: ReturnType<typeof createAntislopStore> | undefined;
 const cert = join(scratch, "cert.pem"), key = join(scratch, "key.pem");
 let backend: HttpsServer | undefined;
 let child: ChildProcess | undefined;
 let base = "";
 async function startBackend(port = 0) {
   assert.ok(store);
-  const api = createApiServer({ store, serviceKey, now: () => rateTime });
+  antislop = createAntislopStore({ databasePath });
+  const api = createApiServer({ store, antislop, serviceKey, now: () => rateTime });
   backend = httpsServer({ key: readFileSync(key), cert: readFileSync(cert) }, api.listeners("request")[0] as Parameters<typeof httpsServer>[1]);
   backend.listen(port, "127.0.0.1"); await once(backend, "listening");
   return (backend.address() as AddressInfo).port;
@@ -40,21 +45,30 @@ async function stopBackend() {
   const server = backend; backend = undefined;
   try {
     if (server?.listening) { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
-  } finally { const current = store; store = undefined; current?.close(); }
+  } finally {
+    const currentAntislop = antislop, currentStore = store;
+    antislop = undefined; store = undefined;
+    try { currentAntislop?.close(); } finally { currentStore?.close(); }
+  }
 }
 const savedTokens: string[] = [];
 const privateCanaries = ["PRIVATE_NOTE_CANARY", "PRIVATE_METADATA_CANARY"];
 type Client = { username: string; token: string; cookie: string; id: string };
 async function call(path: string, status: number, client?: Client, value?: unknown, method = value === undefined ? "GET" : "POST", extra: Record<string, string> = {}) {
-  const response = await fetch(base + path, { method, headers: { origin: base, "content-type": "application/json", ...(client ? { cookie: client.cookie } : {}), ...extra }, ...(value === undefined ? {} : { body: typeof value === "string" ? value : JSON.stringify(value) }), signal: AbortSignal.timeout(16000), redirect: "error" });
+  const response = await fetch(base + path, { method, headers: { origin: base, "content-type": "application/json", ...(client ? { cookie: client.cookie } : {}), ...(client && method === "POST" && path === "/api/antislop/entries" ? { "X-Expected-Player-Id": client.id } : {}), ...extra }, ...(value === undefined ? {} : { body: typeof value === "string" ? value : JSON.stringify(value) }), signal: AbortSignal.timeout(16000), redirect: "error" });
   assert.equal(response.status, status, `${method} ${path}: unexpected status`);
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
   return response;
 }
+function secureCookies(response: Response): string[] {
+  const headers = response.headers.getSetCookie(); assert.ok(headers.length > 0);
+  for (const header of headers) {
+    for (const flag of ["HttpOnly", "Secure", "SameSite=Strict", "Path=/"]) assert.ok(header.includes(flag));
+  }
+  return headers.map(header => header.split(";")[0]!);
+}
 function secureCookie(response: Response): string {
-  const header = response.headers.get("set-cookie"); assert.ok(header);
-  for (const flag of ["HttpOnly", "Secure", "SameSite=Strict", "Path=/"]) assert.ok(header.includes(flag));
-  return header.split(";")[0]!;
+  return secureCookies(response)[0]!;
 }
 function privateAbsent(text: string) {
   for (const secret of [serviceKey, ...savedTokens, ...privateCanaries]) assert.ok(!text.includes(secret), "Private test content reached a public response");
@@ -79,7 +93,7 @@ try {
   } finally { if (free.listening) await new Promise<void>(resolve => free.close(() => resolve())); }
   child = spawn(process.execPath, [join(root, "apps/public/node_modules/next/dist/bin/next"), "start", "-H", "127.0.0.1", "-p", String(port)], {
     cwd: join(root, "apps/public"),
-    env: { ...process.env, NODE_ENV: "production", ELO_API_URL: `https://127.0.0.1:${backendPort}`, ELO_SERVICE_KEY: serviceKey, NODE_EXTRA_CA_CERTS: cert },
+    env: { ...process.env, NODE_ENV: "production", ELO_API_URL: `https://127.0.0.1:${backendPort}`, ELO_SERVICE_KEY: serviceKey, NODE_EXTRA_CA_CERTS: cert, VERCEL_OIDC_TOKEN: "" },
     stdio: "ignore",
   });
   let spawnFailed = false; child.on("error", () => { spawnFailed = true; });
@@ -198,11 +212,74 @@ try {
   writeFileSync(join(artifacts, "flow-scorecard.png"), bytes);
   pass("actual share metadata, embedded profile, nonce-bearing HTML, archived receipt, sandbox SVG and PNG");
 
+  // Synthetic local entries only. The child has no Gateway credential, and this
+  // group never starts judging or sends evidence to an external provider.
+  rateTime += 60001;
+  const beforeAntislopReceipt = (await (await call("/api/me", 200, alice)).json()).player.receipt;
+  const prompt: { prompt: string; window: ReadyEntryDraft["window"] } = await (await call("/api/antislop/prompt", 200)).json();
+  assert.equal(Date.parse(prompt.window.endsAt) - Date.parse(prompt.window.startsAt), 604800000);
+  assert.ok(prompt.prompt.includes(prompt.window.endsAt));
+  const antiCanaries = ["ANTISLOP_ALICE_PRIVATE_CANARY", "ANTISLOP_BOB_PRIVATE_CANARY"];
+  privateCanaries.push(...antiCanaries);
+  const entries: OwnedEntry[] = [];
+  for (const [index, client] of [alice, bob].entries()) {
+    const draft: ReadyEntryDraft = {
+      version: "antislop.entry-draft.v1", status: "ready", window: { ...prompt.window },
+      summary: `${antiCanaries[index]}: synthetic local repair fixture.`,
+      accomplishments: [{ id: "a1", outcome: "Synthetic keyboard repair completed.", evidenceIds: ["e1"] }],
+      evidence: [{ id: "e1", kind: "check", excerpt: `${antiCanaries[index]}: synthetic local check passed.`, occurredAt: prompt.window.endsAt.slice(0, 10) }],
+      publicSummary: null,
+    };
+    const request = { requestId: `flow-entry-${index}`, draft, refereeApproved: true, publicSummary: index === 0 ? { text: "A synthetic public repair summary.", approved: true } : null, optedIn: false };
+    if (index === 0) {
+      await call("/api/antislop/entries", 400, client, { ...request, refereeApproved: false });
+      await call("/api/antislop/entries", 400, client, request, "POST", { "X-Expected-Player-Id": "" });
+      // Reproduce another tab changing the browser cookie after Alice approved
+      // the draft. The private upload must never be stored under Bob's player.
+      await call("/api/antislop/entries", 409, client, request, "POST", { cookie: bob.cookie });
+      const wrongOwner: AntiSlopMe = await (await call("/api/antislop/me", 200, bob)).json();
+      assert.equal(wrongOwner.entries.length, 0);
+    }
+    const entry: OwnedEntry = await (await call("/api/antislop/entries", 201, client, request)).json();
+    assert.equal(entry.entry.participantId, client.id);
+    assert.equal(entry.entry.entryId, entry.entryId);
+    assert.equal(entry.entry.evidence[0]!.occurredAt, draft.evidence[0]!.occurredAt);
+    assert.equal(entry.optedIn, false);
+    assert.ok(entry.entry.summary.includes(antiCanaries[index]!));
+    privateAbsent(await (await call(`/api/antislop/entries/${entry.entryId}`, 404)).text());
+    if (index === 0) assert.deepEqual(await (await call("/api/antislop/entries", 200, client, request)).json(), entry);
+    entries.push(entry);
+  }
+  const [aliceEntry, bobEntry] = entries; assert.ok(aliceEntry && bobEntry);
+  const publicParticipation = await (await call(`/api/antislop/entries/${aliceEntry.entryId}/participation`, 200, alice, { optedIn: true })).text();
+  privateAbsent(publicParticipation);
+  assert.equal(JSON.parse(publicParticipation).entry, undefined);
+  await call(`/api/antislop/entries/${aliceEntry.entryId}/participation`, 404, bob, { optedIn: false });
+  const duelRequest = { requestId: "flow-duel-1", entryId: aliceEntry.entryId, opponentEntryId: bobEntry.entryId };
+  await call("/api/antislop/duels", 409, alice, duelRequest);
+  privateAbsent(await (await call(`/api/antislop/entries/${bobEntry.entryId}/participation`, 200, bob, { optedIn: true })).text());
+  const antiDuel: DuelView = await (await call("/api/antislop/duels", 202, alice, duelRequest)).json();
+  assert.equal(antiDuel.state, "pending"); assert.equal(antiDuel.outcome, null); assert.equal(antiDuel.ratingEligible, false);
+  assert.equal(antiDuel.a.publicSummary, "A synthetic public repair summary."); assert.equal(antiDuel.b.publicSummary, null);
+  assert.equal(Object.hasOwn(antiDuel.a, "entry"), false); assert.equal(Object.hasOwn(antiDuel, "privateVerdicts"), false);
+  const antiReplay: DuelView = await (await call("/api/antislop/duels", 200, bob, { requestId: "flow-duel-reverse", entryId: bobEntry.entryId, opponentEntryId: aliceEntry.entryId })).json();
+  assert.equal(antiReplay.duelId, antiDuel.duelId);
+  for (const path of ["/api/antislop/arena", `/api/antislop/entries/${aliceEntry.entryId}`, `/api/antislop/duels/${antiDuel.duelId}`, `/challenge/${aliceEntry.entryId}`, `/duel/${antiDuel.duelId}`]) {
+    privateAbsent(await (await call(path, 200)).text());
+  }
+  const beforeAntislopRestart: AntiSlopMe = await (await call("/api/antislop/me", 200, alice)).json();
+  assert.equal(beforeAntislopRestart.entries[0]!.entryId, aliceEntry.entryId);
+  assert.ok(JSON.stringify(beforeAntislopRestart).includes(antiCanaries[0]!));
+  assert.ok(!JSON.stringify(beforeAntislopRestart).includes(antiCanaries[1]!));
+  for (const operation of ["claim", "settle", "fail"]) await call(`/api/antislop/internal/duels/${antiDuel.duelId}/${operation}`, 404, alice, {});
+  assert.deepEqual((await (await call("/api/me", 200, alice)).json()).player.receipt, beforeAntislopReceipt);
+  pass("AntiSlop BFF approval and expected-player binding, immutable retry, opt-in ownership, on-demand pair replay, public privacy and internal-route isolation without provider calls");
+
   rateTime += 60001;
   const replacement = randomBytes(32).toString("hex"); savedTokens.push(replacement);
   const rotation = await call("/api/session/rotate", 200, alice, { replacementToken: replacement });
   const rotatedCookie = secureCookie(rotation); assert.equal((await rotation.json()).recoveryKey, replacement);
-  const revoked = await call("/api/me", 401, alice); assert.match(revoked.headers.get("set-cookie")!, /Max-Age=0/);
+  const revoked = await call("/api/me", 401, alice); assert.equal(revoked.headers.get("set-cookie"), null);
   await call("/api/session", 401, undefined, { token: alice.token });
   const restored = await call("/api/session", 200, undefined, { token: replacement });
   const restoredCookie = secureCookie(restored); assert.equal(restoredCookie, rotatedCookie);
@@ -214,6 +291,8 @@ try {
   const signedOut = await call("/api/session", 200, alice, undefined, "DELETE"); assert.match(signedOut.headers.get("set-cookie")!, /Max-Age=0/);
   store = createStore({ databasePath, now: () => now }); await startBackend(backendPort);
   const afterRestart = await (await call("/api/me", 200, alice)).json(); assert.deepEqual(afterRestart, beforeRestart);
+  const afterAntislopRestart: AntiSlopMe = await (await call("/api/antislop/me", 200, alice)).json();
+  assert.deepEqual(afterAntislopRestart, beforeAntislopRestart, "The same SQLite restart must preserve AntiSlop snapshots, participation and duel state");
   assert.equal((await (await call("/api/overview", 200)).json()).competitionId, firstOverview.competitionId);
   pass("rotation revokes old key, saved replacement recovers account, outage is explicit, logout works offline, SQLite restart preserves ledger");
 
@@ -226,9 +305,61 @@ try {
   assert.equal((await (await call("/api/me", 200, charlie)).json()).player.receipt.elo.scalar.rated_matches, 0);
   pass("grounded 43% confidence stays shareable and exhibition-only through the compiled production proxy");
 
-  const summary = { checkedAt: new Date().toISOString(), passed: true, testOnly: true, productionDataChanged: false, localAccounts: 4, checks, transport: "Loopback HTTP Next + HTTPS API, manual cookie headers (not a browser)", persistedRestart: true };
+  rateTime += 60001;
+  const playersBeforeGuest = (await (await call("/api/overview", 200)).json()).stats.players;
+  const bootstrap = await call("/api/guest/session", 200, undefined, {});
+  const bootstrapCookies = secureCookies(bootstrap);
+  assert.ok(bootstrapCookies.length >= 2, "Guest bootstrap needs a session and its signed pending marker");
+  const sessionCookie = bootstrapCookies.find(cookie => cookie.startsWith("elo_session="));
+  assert.ok(sessionCookie && /^elo_session=[0-9a-f]{64}$/.test(sessionCookie), "Guest session must be an opaque credential");
+  const guestToken = sessionCookie.slice("elo_session=".length); savedTokens.push(guestToken);
+  const cookieJar = new Map(bootstrapCookies.map(cookie => [cookie.slice(0, cookie.indexOf("=")), cookie.slice(cookie.indexOf("=") + 1)]));
+  const guestCookies = () => [...cookieJar].map(([name, value]) => `${name}=${value}`).join("; ");
+  const updateGuestCookies = (response: Response) => {
+    const headers = response.headers.getSetCookie();
+    if (headers.length === 0) return;
+    const pairs = secureCookies(response);
+    for (const [index, pair] of pairs.entries()) {
+      const separator = pair.indexOf("="), name = pair.slice(0, separator);
+      if (/\bMax-Age=0\b/i.test(headers[index]!)) cookieJar.delete(name);
+      else cookieJar.set(name, pair.slice(separator + 1));
+    }
+  };
+  const bootstrapText = await bootstrap.text(); privateAbsent(bootstrapText);
+  for (const cookie of bootstrapCookies) assert.ok(!bootstrapText.includes(cookie.slice(cookie.indexOf("=") + 1)), "Guest acknowledgement must not expose cookie contents");
+  const acknowledgement = JSON.parse(bootstrapText);
+  for (const field of ["token", "recoveryKey", "player"]) assert.ok(!Object.hasOwn(acknowledgement, field), "Guest bootstrap must acknowledge without exposing credentials or allocating a player");
+  assert.equal((await (await call("/api/overview", 200)).json()).stats.players, playersBeforeGuest);
+  const guestName = { username: "flow_guest" };
+  await call("/api/guest/player", 401, undefined, guestName);
+  for (const [path, body] of [["/api/guest/session", {}], ["/api/guest/player", guestName]] as const) {
+    const headers = { cookie: guestCookies() };
+    assert.equal((await call(`${path}?unexpected=1`, 400, undefined, body, "POST", headers)).headers.get("set-cookie"), null);
+    assert.equal((await call(path, 403, undefined, body, "POST", { ...headers, origin: "https://foreign.invalid" })).headers.get("set-cookie"), null);
+    assert.equal((await call(path, 403, undefined, body, "POST", { ...headers, "sec-fetch-site": "cross-site" })).headers.get("set-cookie"), null);
+  }
+  const namedGuestResponse = await call("/api/guest/player", 201, undefined, guestName, "POST", { cookie: guestCookies() });
+  updateGuestCookies(namedGuestResponse);
+  assert.ok(!cookieJar.has("elo_pending"), "Naming a guest must retire the pending marker before the account retry");
+  assert.ok(cookieJar.get("elo_session") === guestToken, "Naming a guest must preserve the browser session credential");
+  const namedGuestText = await namedGuestResponse.text(); privateAbsent(namedGuestText);
+  const namedGuest = JSON.parse(namedGuestText);
+  for (const field of ["token", "recoveryKey"]) assert.ok(!Object.hasOwn(namedGuest, field), "Naming a guest returns the account view, never credentials");
+  assert.equal(namedGuest.player.username, guestName.username);
+  assert.equal(namedGuest.player.receipt, null);
+  const guest: Client = { ...guestName, id: namedGuest.player.id, token: guestToken, cookie: guestCookies() };
+  const retriedGuest = await call("/api/guest/player", 201, guest, guestName);
+  const retriedGuestText = await retriedGuest.text(); privateAbsent(retriedGuestText);
+  assert.equal(JSON.parse(retriedGuestText).player.id, guest.id);
+  await call("/api/guest/player", 409, guest, { username: "flow_guest_other" });
+  assert.equal((await (await call("/api/me", 200, guest)).json()).player.id, guest.id);
+  const localAccounts = (await (await call("/api/overview", 200)).json()).stats.players;
+  assert.equal(localAccounts, playersBeforeGuest + 1); assert.equal(localAccounts, 5);
+  pass("guest bootstrap allocates no player, secures both cookies without exposing credentials, and binds one idempotent username behind origin/query/session guards");
+
+  const summary = { checkedAt: new Date().toISOString(), passed: true, testOnly: true, productionDataChanged: false, localAccounts, checks, transport: "Loopback HTTP Next + HTTPS API, manual cookie headers (not a browser)", persistedRestart: true };
   writeFileSync(join(artifacts, "production-flows.json"), JSON.stringify(summary, null, 2) + "\n");
-  console.log(JSON.stringify({ passed: true, checks: checks.length, localAccounts: 4, productionDataChanged: false }));
+  console.log(JSON.stringify({ passed: true, checks: checks.length, localAccounts, productionDataChanged: false }));
 } catch (error) {
   const summary = { checkedAt: new Date().toISOString(), passed: false, testOnly: true, checks, error: error instanceof Error ? error.message : "Failed", productionDataChanged: false };
   writeFileSync(join(artifacts, "production-flows.json"), JSON.stringify(summary, null, 2) + "\n");

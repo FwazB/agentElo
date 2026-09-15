@@ -46,7 +46,7 @@ try {
   const scripts = html.match(/<script\b[^>]*>/g) ?? []; assert.ok(scripts.length > 0);
   for (const tag of scripts) assert.ok(tag.includes(`nonce="${nonce}"`), tag);
   assert.match(html, /summary_large_image/); assert.match(html, /1000\/1000 Computer Form/);
-  assert.ok(html.includes(`https://computer-elo.vercel.app/u/${username}/opengraph-image`));
+  assert.ok(html.includes(`https://antislop.org/u/${username}/opengraph-image`));
   assert.ok(!html.includes(serviceKey));
   const second = await fetch(base); assert.notEqual(second.headers.get("content-security-policy"), csp);
   const png = await fetch(`${base}/u/${username}/opengraph-image`);

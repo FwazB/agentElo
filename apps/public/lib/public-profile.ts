@@ -4,7 +4,7 @@ import { headers } from "next/headers";
 import { cache } from "react";
 import type { PlayerView } from "../../../packages/public-api/types";
 
-export const SITE_URL = "https://computer-elo.vercel.app";
+export const SITE_URL = "https://antislop.org";
 
 export const getPublicProfile = cache(async (username: string): Promise<PlayerView | null> => {
   if (!/^[a-z][a-z0-9_]{2,19}$/.test(username)) return null;

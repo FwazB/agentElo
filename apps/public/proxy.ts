@@ -21,4 +21,4 @@ export function proxy(request: NextRequest) {
   return response;
 }
 
-export const config = { matcher: ["/", "/kit", "/connect", "/player/:id", "/u/:username"] };
+export const config = { matcher: ["/", "/kit", "/connect", "/form", "/challenge/:id", "/duel/:id", "/player/:id", "/u/:username"] };

@@ -27,5 +27,5 @@ export async function generateMetadata({ params }: Context): Promise<Metadata> {
 export default async function UsernamePage({ params }: Context) {
   const { username } = await params;
   if (!await getPublicProfile(username)) notFound();
-  return <League initialProfile={{ username }} />;
+  return <League surface="antislop" initialProfile={{ username }} />;
 }

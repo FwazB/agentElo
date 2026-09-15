@@ -6,5 +6,5 @@ export const metadata = {
 };
 
 export default function ConnectPage() {
-  return <League initialDialog="connect" />;
+  return <League surface="antislop" initialDialog="connect" />;
 }

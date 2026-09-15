@@ -16,7 +16,7 @@ test("link, full reference and prompt share a private direct-estimate contract",
   assert.equal(guide.version, "computer-elo.assessment-guide.v4");
   assert.equal(guide.prompt, buildAssessmentPrompt(guide.weekId));
   assert.ok(renderScoringGuide(new Date("2026-09-14T12:00:00Z")).includes(guide.prompt));
-  assert.match(buildQuickPrompt(guide.weekId), /https:\/\/computer-elo\.vercel\.app\/rate\.md/);
+  assert.match(buildQuickPrompt(guide.weekId), /https:\/\/antislop\.org\/rate\.md/);
   for (const prompt of [guide.prompt, buildQuickPrompt(guide.weekId)]) {
     assert.match(prompt, /do not ask follow-up questions/i);
     assert.doesNotMatch(prompt, /wait for my reply|ask up to three|Give me 3–6 bullets/);

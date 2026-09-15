@@ -1,6 +1,6 @@
 {
   "datasetProvenance": "synthetic",
-  "judgeFingerprint": "sha256:1a228528347cbd44692addd41706acf925b87b3522f0d34101db09119747f826",
+  "judgeFingerprint": "sha256:7fb868cc6e09f6a41b6716b9aecf7092dc4dfce87fe7dd7a5df8bc04fdd4396c",
   "cases": [
     {
       "id": "synthetic-calibration",
@@ -61,56 +61,56 @@
       "repeat": 0,
       "order": "ab",
       "outcome": "a_wins",
-      "judgeFingerprint": "sha256:1a228528347cbd44692addd41706acf925b87b3522f0d34101db09119747f826"
+      "judgeFingerprint": "sha256:7fb868cc6e09f6a41b6716b9aecf7092dc4dfce87fe7dd7a5df8bc04fdd4396c"
     },
     {
       "caseId": "synthetic-calibration",
       "repeat": 0,
       "order": "ba",
       "outcome": "b_wins",
-      "judgeFingerprint": "sha256:1a228528347cbd44692addd41706acf925b87b3522f0d34101db09119747f826"
+      "judgeFingerprint": "sha256:7fb868cc6e09f6a41b6716b9aecf7092dc4dfce87fe7dd7a5df8bc04fdd4396c"
     },
     {
       "caseId": "synthetic-calibration",
       "repeat": 1,
       "order": "ab",
       "outcome": "a_wins",
-      "judgeFingerprint": "sha256:1a228528347cbd44692addd41706acf925b87b3522f0d34101db09119747f826"
+      "judgeFingerprint": "sha256:7fb868cc6e09f6a41b6716b9aecf7092dc4dfce87fe7dd7a5df8bc04fdd4396c"
     },
     {
       "caseId": "synthetic-calibration",
       "repeat": 1,
       "order": "ba",
       "outcome": "b_wins",
-      "judgeFingerprint": "sha256:1a228528347cbd44692addd41706acf925b87b3522f0d34101db09119747f826"
+      "judgeFingerprint": "sha256:7fb868cc6e09f6a41b6716b9aecf7092dc4dfce87fe7dd7a5df8bc04fdd4396c"
     },
     {
       "caseId": "synthetic-holdout",
       "repeat": 0,
       "order": "ab",
       "outcome": "draw",
-      "judgeFingerprint": "sha256:1a228528347cbd44692addd41706acf925b87b3522f0d34101db09119747f826"
+      "judgeFingerprint": "sha256:7fb868cc6e09f6a41b6716b9aecf7092dc4dfce87fe7dd7a5df8bc04fdd4396c"
     },
     {
       "caseId": "synthetic-holdout",
       "repeat": 0,
       "order": "ba",
       "outcome": "draw",
-      "judgeFingerprint": "sha256:1a228528347cbd44692addd41706acf925b87b3522f0d34101db09119747f826"
+      "judgeFingerprint": "sha256:7fb868cc6e09f6a41b6716b9aecf7092dc4dfce87fe7dd7a5df8bc04fdd4396c"
     },
     {
       "caseId": "synthetic-holdout",
       "repeat": 1,
       "order": "ab",
       "outcome": "a_wins",
-      "judgeFingerprint": "sha256:1a228528347cbd44692addd41706acf925b87b3522f0d34101db09119747f826"
+      "judgeFingerprint": "sha256:7fb868cc6e09f6a41b6716b9aecf7092dc4dfce87fe7dd7a5df8bc04fdd4396c"
     },
     {
       "caseId": "synthetic-holdout",
       "repeat": 1,
       "order": "ba",
       "outcome": "a_wins",
-      "judgeFingerprint": "sha256:1a228528347cbd44692addd41706acf925b87b3522f0d34101db09119747f826"
+      "judgeFingerprint": "sha256:7fb868cc6e09f6a41b6716b9aecf7092dc4dfce87fe7dd7a5df8bc04fdd4396c"
     }
   ]
 }
