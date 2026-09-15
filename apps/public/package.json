@@ -18,11 +18,11 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "2.0.0",
-    "@types/jsdom": "27.0.0",
+    "@types/jsdom": "30.0.0",
     "@types/node": "^26.4.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "jsdom": "27.4.0",
+    "jsdom": "30.0.1",
     "typescript": "^7.0.2"
   },
   "engines": {
