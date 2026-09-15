@@ -1,0 +1,49 @@
+# Dependencies, generated builds, test outputs and local state.
+node_modules/
+.next/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+*.log
+.DS_Store
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+/artifacts/
+/runs/
+/data/
+/var/
+*.sqlite*
+*.db
+*.db-*
+
+# Secrets and local hosting links, including the production-specific IaC file.
+.env*
+!.env.example
+.npmrc
+.git-credentials
+.vercel/
+.railway/
+.ssh/
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+credentials*.json
+
+# Generated from reviewed source on every frontend build.
+/apps/public/public/computer-elo-kit.zip
+
+# Local audit/launch notes retain deployment and activity snapshots.
+/docs/security-review-*.md
+/docs/robust-testing-*.md
+/docs/ai-reference-security.md
+/docs/one-page-design.md
+/docs/public-launch-plan.md
+/docs/git-preparation-*.md
+/scripts/check-public-live.mjs
+/scripts/check-robust-live.mjs

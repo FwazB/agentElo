@@ -1,0 +1,57 @@
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Check tracked file boundary
+        run: npm run repo:check -- --history
+      - name: Scan Git history for secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          scan_dir="$(mktemp -d)"
+          trap 'rm -rf "$scan_dir"' EXIT
+          curl --fail --silent --show-error --location --max-time 60 --output "$scan_dir/gitleaks.tar.gz" https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $scan_dir/gitleaks.tar.gz" | sha256sum --check --strict
+          tar -xzf "$scan_dir/gitleaks.tar.gz" -C "$scan_dir" gitleaks
+          "$scan_dir/gitleaks" git --log-opts=--all --redact --no-banner --timeout 60
+      - name: Install pinned dependencies without lifecycle scripts
+        run: |
+          npm ci --ignore-scripts
+          npm ci --ignore-scripts --prefix apps/public
+      - name: Check types and test
+        run: |
+          npm run typecheck
+          npm run public:typecheck
+          npm test
+      - name: Audit dependency locks
+        run: |
+          npm audit --audit-level=high
+          npm audit --audit-level=high --prefix apps/public
+          npm audit --audit-level=high --prefix scripts/public-kit
+      - name: Build and exercise local production flow
+        run: |
+          npm run public:build
+          node --import tsx scripts/check-production-flows.ts

@@ -1,0 +1,397 @@
+{
+  "$id": "urn:elorakings:computer-elo:public-receipt:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Computer Elo public receipt 1.0.0",
+  "oneOf": [
+    { "$ref": "#/$defs/playerReceipt" },
+    { "$ref": "#/$defs/matchReceipt" },
+    { "$ref": "#/$defs/leaderboardReceipt" }
+  ],
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "playerId": {
+      "type": "string",
+      "pattern": "^p_[0-9a-f]{32}$"
+    },
+    "competitionId": {
+      "type": "string",
+      "pattern": "^c_[0-9a-f]{32}$"
+    },
+    "matchId": {
+      "type": "string",
+      "pattern": "^m_[0-9a-f]{32}$"
+    },
+    "weekId": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-W(?:0[1-9]|[1-4][0-9]|5[0-3])$"
+    },
+    "ppm": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000
+    },
+    "safeInteger": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "counter": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["private_evidence_included", "raw_activity_included"],
+      "properties": {
+        "private_evidence_included": { "const": false },
+        "raw_activity_included": { "const": false }
+      }
+    },
+    "confidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "band",
+        "certainty_ppm",
+        "coverage_ppm",
+        "effective_ppm",
+        "version"
+      ],
+      "properties": {
+        "band": { "enum": ["low", "medium", "high"] },
+        "certainty_ppm": { "$ref": "#/$defs/ppm" },
+        "coverage_ppm": { "$ref": "#/$defs/ppm" },
+        "effective_ppm": { "$ref": "#/$defs/ppm" },
+        "version": { "const": "computer-confidence.coverage-certainty-min.v1" }
+      }
+    },
+    "form": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["confidence", "score", "version"],
+      "properties": {
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "score": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "version": { "const": "computer-form.general.v1" }
+      }
+    },
+    "binaryEloState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "formula_version",
+        "last_match_fingerprint",
+        "rated_matches",
+        "rating_milli"
+      ],
+      "properties": {
+        "formula_version": { "const": "computer-elo.binary.v1" },
+        "last_match_fingerprint": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/fingerprint" }
+          ]
+        },
+        "rated_matches": { "$ref": "#/$defs/counter" },
+        "rating_milli": { "$ref": "#/$defs/safeInteger" }
+      }
+    },
+    "scalarEloState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "formula_version",
+        "last_match_fingerprint",
+        "rated_matches",
+        "rating_milli"
+      ],
+      "properties": {
+        "formula_version": { "const": "computer-elo.scalar-tanh200.v1" },
+        "last_match_fingerprint": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/fingerprint" }
+          ]
+        },
+        "rated_matches": { "$ref": "#/$defs/counter" },
+        "rating_milli": { "$ref": "#/$defs/safeInteger" }
+      }
+    },
+    "playerReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "canonical_json_profile",
+        "competition_id",
+        "elo",
+        "fingerprint",
+        "form",
+        "parent_fingerprint",
+        "player_id",
+        "privacy",
+        "protocol_version",
+        "receipt_type",
+        "schema_version",
+        "week_id"
+      ],
+      "properties": {
+        "canonical_json_profile": { "const": "cej-ascii-integer.v1" },
+        "competition_id": { "$ref": "#/$defs/competitionId" },
+        "elo": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["binary", "scalar"],
+          "properties": {
+            "binary": { "$ref": "#/$defs/binaryEloState" },
+            "scalar": { "$ref": "#/$defs/scalarEloState" }
+          }
+        },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" },
+        "form": { "$ref": "#/$defs/form" },
+        "parent_fingerprint": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/fingerprint" }
+          ]
+        },
+        "player_id": { "$ref": "#/$defs/playerId" },
+        "privacy": { "$ref": "#/$defs/privacy" },
+        "protocol_version": { "const": "computer-elo.protocol.v1" },
+        "receipt_type": { "const": "player" },
+        "schema_version": { "const": "1.0.0" },
+        "week_id": { "$ref": "#/$defs/weekId" }
+      }
+    },
+    "matchPlayer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "applied_delta_milli",
+        "confidence_ppm",
+        "form_score",
+        "player_id",
+        "rated_matches_after",
+        "rated_matches_before",
+        "rating_after_milli",
+        "rating_before_milli",
+        "source_receipt_fingerprint",
+        "week_id"
+      ],
+      "properties": {
+        "applied_delta_milli": { "$ref": "#/$defs/safeInteger" },
+        "confidence_ppm": { "$ref": "#/$defs/ppm" },
+        "form_score": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "player_id": { "$ref": "#/$defs/playerId" },
+        "rated_matches_after": { "$ref": "#/$defs/counter" },
+        "rated_matches_before": { "$ref": "#/$defs/counter" },
+        "rating_after_milli": { "$ref": "#/$defs/safeInteger" },
+        "rating_before_milli": { "$ref": "#/$defs/safeInteger" },
+        "source_receipt_fingerprint": { "$ref": "#/$defs/fingerprint" },
+        "week_id": { "$ref": "#/$defs/weekId" }
+      }
+    },
+    "calculation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "actual_score_a",
+        "calculated_delta_milli_a",
+        "calculated_delta_milli_b",
+        "confidence_ppm",
+        "expected_score_a",
+        "k",
+        "numeric_profile",
+        "raw_delta_a"
+      ],
+      "properties": {
+        "actual_score_a": {
+          "type": "string",
+          "pattern": "^-?[0-9]+\\.[0-9]{15}$"
+        },
+        "calculated_delta_milli_a": { "$ref": "#/$defs/safeInteger" },
+        "calculated_delta_milli_b": { "$ref": "#/$defs/safeInteger" },
+        "confidence_ppm": { "$ref": "#/$defs/ppm" },
+        "expected_score_a": {
+          "type": "string",
+          "pattern": "^-?[0-9]+\\.[0-9]{15}$"
+        },
+        "k": { "enum": [32, 64] },
+        "numeric_profile": { "const": "decimal80-rne.v1" },
+        "raw_delta_a": {
+          "type": "string",
+          "pattern": "^-?[0-9]+\\.[0-9]{12}$"
+        }
+      }
+    },
+    "matchReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "calculation",
+        "canonical_json_profile",
+        "competition_ids",
+        "exhibition_reasons",
+        "fingerprint",
+        "formula_version",
+        "match_id",
+        "mode",
+        "players",
+        "privacy",
+        "protocol_version",
+        "rating_effect",
+        "receipt_type",
+        "schema_version"
+      ],
+      "properties": {
+        "calculation": { "$ref": "#/$defs/calculation" },
+        "canonical_json_profile": { "const": "cej-ascii-integer.v1" },
+        "competition_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/competitionId" }
+        },
+        "exhibition_reasons": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "competition_mismatch",
+              "week_mismatch",
+              "form_version_mismatch",
+              "confidence_version_mismatch",
+              "low_confidence"
+            ]
+          }
+        },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" },
+        "formula_version": {
+          "enum": [
+            "computer-elo.binary.v1",
+            "computer-elo.scalar-tanh200.v1"
+          ]
+        },
+        "match_id": { "$ref": "#/$defs/matchId" },
+        "mode": { "enum": ["binary", "scalar"] },
+        "players": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["a", "b"],
+          "properties": {
+            "a": { "$ref": "#/$defs/matchPlayer" },
+            "b": { "$ref": "#/$defs/matchPlayer" }
+          }
+        },
+        "privacy": { "$ref": "#/$defs/privacy" },
+        "protocol_version": { "const": "computer-elo.protocol.v1" },
+        "rating_effect": { "enum": ["rated", "exhibition"] },
+        "receipt_type": { "const": "match" },
+        "schema_version": { "const": "1.0.0" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "mode": { "const": "binary" } } },
+          "then": {
+            "properties": {
+              "formula_version": { "const": "computer-elo.binary.v1" }
+            }
+          },
+          "else": {
+            "properties": {
+              "formula_version": { "const": "computer-elo.scalar-tanh200.v1" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "rating_effect": { "const": "rated" } } },
+          "then": {
+            "properties": {
+              "exhibition_reasons": { "maxItems": 0 }
+            }
+          },
+          "else": {
+            "properties": {
+              "exhibition_reasons": { "minItems": 1 }
+            }
+          }
+        }
+      ]
+    },
+    "leaderboardEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "player_id",
+        "rank",
+        "rated_matches",
+        "rating_milli",
+        "source_receipt_fingerprint"
+      ],
+      "properties": {
+        "player_id": { "$ref": "#/$defs/playerId" },
+        "rank": { "type": "integer", "minimum": 1 },
+        "rated_matches": { "$ref": "#/$defs/counter" },
+        "rating_milli": { "$ref": "#/$defs/safeInteger" },
+        "source_receipt_fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "leaderboardReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "canonical_json_profile",
+        "competition_id",
+        "entries",
+        "fingerprint",
+        "formula_version",
+        "mode",
+        "privacy",
+        "protocol_version",
+        "receipt_type",
+        "schema_version"
+      ],
+      "properties": {
+        "canonical_json_profile": { "const": "cej-ascii-integer.v1" },
+        "competition_id": { "$ref": "#/$defs/competitionId" },
+        "entries": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "$ref": "#/$defs/leaderboardEntry" }
+        },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" },
+        "formula_version": {
+          "enum": [
+            "computer-elo.binary.v1",
+            "computer-elo.scalar-tanh200.v1"
+          ]
+        },
+        "mode": { "enum": ["binary", "scalar"] },
+        "privacy": { "$ref": "#/$defs/privacy" },
+        "protocol_version": { "const": "computer-elo.protocol.v1" },
+        "receipt_type": { "const": "leaderboard" },
+        "schema_version": { "const": "1.0.0" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "mode": { "const": "binary" } } },
+          "then": {
+            "properties": {
+              "formula_version": { "const": "computer-elo.binary.v1" }
+            }
+          },
+          "else": {
+            "properties": {
+              "formula_version": { "const": "computer-elo.scalar-tanh200.v1" }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

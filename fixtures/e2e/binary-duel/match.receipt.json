@@ -1,0 +1,55 @@
+{
+  "calculation": {
+    "actual_score_a": "1.000000000000000",
+    "calculated_delta_milli_a": 19200,
+    "calculated_delta_milli_b": -19200,
+    "confidence_ppm": 600000,
+    "expected_score_a": "0.500000000000000",
+    "k": 64,
+    "numeric_profile": "decimal80-rne.v1",
+    "raw_delta_a": "19.200000000000"
+  },
+  "canonical_json_profile": "cej-ascii-integer.v1",
+  "competition_ids": [
+    "c_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  ],
+  "exhibition_reasons": [],
+  "fingerprint": "sha256:4cca9b5536ff0b5c594837a234404312fafbfaa9505c999b07b742ff961f5158",
+  "formula_version": "computer-elo.binary.v1",
+  "match_id": "m_44444444444444444444444444444444",
+  "mode": "binary",
+  "players": {
+    "a": {
+      "applied_delta_milli": 19200,
+      "confidence_ppm": 800000,
+      "form_score": 700,
+      "player_id": "p_11111111111111111111111111111111",
+      "rated_matches_after": 1,
+      "rated_matches_before": 0,
+      "rating_after_milli": 1219200,
+      "rating_before_milli": 1200000,
+      "source_receipt_fingerprint": "sha256:13f26536d1e799c46e17e68d889ee6f0ae0f89df9ce00cfa6cb2057500dac70e",
+      "week_id": "2026-W35"
+    },
+    "b": {
+      "applied_delta_milli": -19200,
+      "confidence_ppm": 600000,
+      "form_score": 500,
+      "player_id": "p_22222222222222222222222222222222",
+      "rated_matches_after": 1,
+      "rated_matches_before": 0,
+      "rating_after_milli": 1180800,
+      "rating_before_milli": 1200000,
+      "source_receipt_fingerprint": "sha256:af003cbead322cf6f64635e4827240979fcdbb9fdaa4bb178b7a6774eebb548d",
+      "week_id": "2026-W35"
+    }
+  },
+  "privacy": {
+    "private_evidence_included": false,
+    "raw_activity_included": false
+  },
+  "protocol_version": "computer-elo.protocol.v1",
+  "rating_effect": "rated",
+  "receipt_type": "match",
+  "schema_version": "1.0.0"
+}

@@ -1,0 +1,30 @@
+{
+  "canonical_json_profile": "cej-ascii-integer.v1",
+  "competition_id": "c_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "entries": [
+    {
+      "player_id": "p_11111111111111111111111111111111",
+      "rank": 1,
+      "rated_matches": 1,
+      "rating_milli": 1214623,
+      "source_receipt_fingerprint": "sha256:91b45192ea08a3334e006b30d9901c63eb6822fb9b7be2c586c64e7fe77a5974"
+    },
+    {
+      "player_id": "p_22222222222222222222222222222222",
+      "rank": 2,
+      "rated_matches": 1,
+      "rating_milli": 1185377,
+      "source_receipt_fingerprint": "sha256:4033c5b88c5a04d8fbcc7607c00dbb6492a2449a96634dfb6e6c23a867d20702"
+    }
+  ],
+  "fingerprint": "sha256:fa5926ae4c41db4d197faa9f2d36cd4e5ba2c5cb3d058bbd36ee3b462973ce79",
+  "formula_version": "computer-elo.scalar-tanh200.v1",
+  "mode": "scalar",
+  "privacy": {
+    "private_evidence_included": false,
+    "raw_activity_included": false
+  },
+  "protocol_version": "computer-elo.protocol.v1",
+  "receipt_type": "leaderboard",
+  "schema_version": "1.0.0"
+}

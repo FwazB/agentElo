@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-label="Computer Elo match card">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#070d0a"/>
+      <stop offset="1" stop-color="#142018"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7CFF6B"/>
+      <stop offset="1" stop-color="#36E4C3"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="675" fill="url(#bg)"/>
+  <circle cx="1110" cy="60" r="190" fill="#7CFF6B" opacity=".06"/>
+  <circle cx="60" cy="660" r="220" fill="#36E4C3" opacity=".04"/>
+  <style>
+    .sans { font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .white { fill: #F5FFF8; }
+    .green { fill: #7CFF6B; }
+    .muted { fill: #91A69B; }
+  </style>
+  <text x="72" y="72" class="sans green" font-size="24" font-weight="800" letter-spacing="3">COMPUTER ELO · SCALAR · RATED</text>
+  <text x="1128" y="72" class="sans muted" font-size="18" text-anchor="end">K=64</text>
+  <line x1="72" y1="100" x2="1128" y2="100" stroke="#2B4435"/>
+  <text x="300" y="170" class="sans white" font-size="28" font-weight="700" text-anchor="middle">PLAYER 111111</text>
+  <text x="900" y="170" class="sans white" font-size="28" font-weight="700" text-anchor="middle">PLAYER 222222</text>
+  <text x="300" y="325" class="sans white" font-size="112" font-weight="900" text-anchor="middle">1214.623</text>
+  <text x="900" y="325" class="sans white" font-size="112" font-weight="900" text-anchor="middle">1185.377</text>
+  <text x="300" y="375" class="sans muted" font-size="22" text-anchor="middle">FORM 700 · CONF 80.0%</text>
+  <text x="900" y="375" class="sans muted" font-size="22" text-anchor="middle">FORM 500 · CONF 60.0%</text>
+  <text x="600" y="285" class="sans muted" font-size="42" font-weight="800" text-anchor="middle">VS</text>
+  <rect x="370" y="425" width="460" height="68" rx="34" fill="#7CFF6B" opacity=".12" stroke="#7CFF6B"/>
+  <text x="600" y="469" class="sans green" font-size="25" font-weight="900" text-anchor="middle">+14.623 / -14.623 ELO</text>
+  <line x1="72" y1="530" x2="1128" y2="530" stroke="#2B4435"/>
+  <text x="72" y="574" class="sans green" font-size="19" font-weight="800">NO RAW ACTIVITY OR PRIVATE EVIDENCE INCLUDED</text>
+  <text x="72" y="612" class="sans muted" font-size="16">COMPATIBLE + SUPPORTED</text>
+  <text x="1128" y="642" class="sans muted" font-size="14" text-anchor="end">d4f694f0718ba26a</text>
+</svg>

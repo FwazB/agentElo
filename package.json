@@ -1,0 +1,33 @@
+{
+  "name": "elorakings",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "computer-elo": "tsx skills/computer-elo/scripts/computer_elo.ts",
+    "dev": "tsx watch apps/web/server.ts",
+    "start": "tsx apps/web/server.ts",
+    "test": "node --import tsx --test apps/web/tests/*.test.ts apps/api/tests/*.test.ts packages/elo-engine/tests/*.test.ts apps/public/tests/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "api:start": "tsx apps/api/server.ts",
+    "public:dev": "npm --prefix apps/public run dev",
+    "public:build": "npm --prefix apps/public run build",
+    "public:typecheck": "npm --prefix apps/public run typecheck",
+    "repo:check": "node scripts/check-repository.mjs",
+    "security:secrets": "gitleaks git --log-opts=--all --redact --no-banner --timeout 60"
+  },
+  "dependencies": {
+    "decimal.js": "^10.6.0",
+    "ipaddr.js": "^2.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "esbuild": "^0.28.2",
+    "railway": "^3.11.0",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}

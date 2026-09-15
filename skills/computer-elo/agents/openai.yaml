@@ -1,0 +1,5 @@
+interface:
+  display_name: "Computer Elo"
+  short_description: "Rate form and run portable Elo matches"
+  brand_color: "#7CFF6B"
+  default_prompt: "Use $computer-elo to rate my weekly Computer Form privately and create a public Computer Elo receipt and share card."

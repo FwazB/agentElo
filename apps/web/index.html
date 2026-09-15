@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="A capability-gated LAN preview of Computer Form and Computer Elo.">
+    <title>Elo Ra Kings — LAN Arena</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="site-header">
+        <a class="wordmark" href="/" aria-label="Elo Ra Kings home">
+          <span class="wordmark-mark">ERK</span>
+          <span>Elo Ra Kings</span>
+        </a>
+        <div class="header-actions">
+          <span class="server-pill"><span id="server-dot" class="status-dot"></span><span id="server-state">Connecting</span></span>
+          <button id="copy-link" class="quiet-button" type="button">Copy LAN link</button>
+          <input id="manual-link" class="manual-link" type="text" readonly hidden aria-label="Select and copy the LAN room link">
+        </div>
+      </header>
+
+      <main>
+        <section class="hero" aria-labelledby="page-title">
+          <div>
+            <p class="eyebrow">Shared LAN arena · Engine-backed</p>
+            <h1 id="page-title">Your week sets the signal.<br>Elo tells the story.</h1>
+          </div>
+          <p class="hero-copy">Set two weekly Form scores, choose how they compete, and watch separate Elo streams evolve across every browser holding this private room link.</p>
+        </section>
+
+        <section class="concept-strip" aria-label="Computer Elo concepts">
+          <article>
+            <span class="concept-number">01</span>
+            <div><strong>Computer Form</strong><p>A private-evidence weekly snapshot from 1–1000.</p></div>
+          </article>
+          <article>
+            <span class="concept-number">02</span>
+            <div><strong>Computer Elo</strong><p>A long-running relative rating. Every mode starts at 1200.</p></div>
+          </article>
+          <article>
+            <span class="concept-number">03</span>
+            <div><strong>Confidence</strong><p>Coverage plus certainty. The lower value controls match strength.</p></div>
+          </article>
+        </section>
+
+        <section class="arena" aria-labelledby="arena-title">
+          <div class="arena-heading">
+            <div>
+              <p class="eyebrow">Live rules preview</p>
+              <h2 id="arena-title">Duel arena</h2>
+            </div>
+            <div class="preset-buttons" role="group" aria-label="Arena presets">
+              <button class="quiet-button preset-button active" type="button" data-preset="rated">Reset: rated sample</button>
+              <button class="quiet-button preset-button" type="button" data-preset="low_confidence">Reset: low confidence</button>
+              <button class="quiet-button preset-button" type="button" data-preset="established">Reset: established</button>
+            </div>
+          </div>
+
+          <div class="arena-grid">
+            <article class="player-panel player-a" aria-labelledby="player-a-title">
+              <div class="player-topline">
+                <div>
+                  <p class="player-kicker">Player A</p>
+                  <h3 id="player-a-title">Challenger 111111</h3>
+                </div>
+                <span id="a-stage" class="stage-pill">Provisional</span>
+              </div>
+              <div class="rating-block">
+                <span class="rating-label"><span id="a-mode-label">Scalar</span> Elo</span>
+                <strong id="a-rating">1200.000</strong>
+                <span id="a-matches">0 rated matches</span>
+              </div>
+              <div class="control-stack">
+                <label for="a-form"><span>Weekly Form</span><output id="a-form-value">700</output></label>
+                <input id="a-form" type="range" min="1" max="1000" value="700">
+                <label for="a-coverage"><span>Evidence coverage</span><output id="a-coverage-value">90%</output></label>
+                <input id="a-coverage" type="range" min="0" max="100" value="90">
+                <label for="a-certainty"><span>Evaluator certainty</span><output id="a-certainty-value">80%</output></label>
+                <input id="a-certainty" type="range" min="0" max="100" value="80">
+              </div>
+              <p id="a-confidence" class="effective-confidence">Effective confidence 80%</p>
+            </article>
+
+            <div class="duel-console">
+              <div class="mode-switch" role="group" aria-label="Elo mode">
+                <button class="mode-button" type="button" data-mode="binary" aria-pressed="false">Binary · winner-only</button>
+                <button class="mode-button active" type="button" data-mode="scalar" aria-pressed="true">Scalar · score-gap</button>
+              </div>
+              <p id="mode-explainer" class="mode-explainer">Magnitude matters: a wider Form gap produces a stronger match score.</p>
+              <div class="versus-mark" aria-hidden="true"><span>A</span><b>vs</b><span>B</span></div>
+              <label class="compatibility-control" for="compatible">
+                <input id="compatible" type="checkbox" checked>
+                <span><strong>Self-attest compatible context</strong><small>Same competition, week, and ruleset</small></span>
+              </label>
+              <div id="gate-preview" class="gate-preview rated-preview">Rated · confidence 60% · K=64</div>
+              <button id="run-duel" class="duel-button" type="button">Run scalar duel</button>
+              <p class="k-note">K=64 while either player has fewer than five rated matches. K=32 only when both are established.</p>
+            </div>
+
+            <article class="player-panel player-b" aria-labelledby="player-b-title">
+              <div class="player-topline">
+                <div>
+                  <p class="player-kicker">Player B</p>
+                  <h3 id="player-b-title">Challenger 222222</h3>
+                </div>
+                <span id="b-stage" class="stage-pill">Provisional</span>
+              </div>
+              <div class="rating-block">
+                <span class="rating-label"><span id="b-mode-label">Scalar</span> Elo</span>
+                <strong id="b-rating">1200.000</strong>
+                <span id="b-matches">0 rated matches</span>
+              </div>
+              <div class="control-stack">
+                <label for="b-form"><span>Weekly Form</span><output id="b-form-value">500</output></label>
+                <input id="b-form" type="range" min="1" max="1000" value="500">
+                <label for="b-coverage"><span>Evidence coverage</span><output id="b-coverage-value">75%</output></label>
+                <input id="b-coverage" type="range" min="0" max="100" value="75">
+                <label for="b-certainty"><span>Evaluator certainty</span><output id="b-certainty-value">60%</output></label>
+                <input id="b-certainty" type="range" min="0" max="100" value="60">
+              </div>
+              <p id="b-confidence" class="effective-confidence">Effective confidence 60%</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="result-panel" class="result-panel" aria-live="polite" hidden>
+          <div class="result-status-column">
+            <p class="eyebrow">Match result</p>
+            <span id="result-badge" class="result-badge">Rated match</span>
+            <h2 id="result-headline">Ratings updated</h2>
+            <p id="result-reason">Compatible context and sufficient confidence.</p>
+            <p id="result-context" class="result-context"></p>
+          </div>
+          <div class="delta-display">
+            <div><span>Player A</span><strong id="result-delta-a">+0.000</strong></div>
+            <div><span>Player B</span><strong id="result-delta-b">−0.000</strong></div>
+          </div>
+          <dl id="calculation-grid" class="calculation-grid">
+            <div><dt>K factor</dt><dd id="result-k">64</dd></div>
+            <div><dt>Match confidence</dt><dd id="result-confidence">60%</dd></div>
+            <div><dt>Actual score A</dt><dd id="result-actual">88.08%</dd></div>
+            <div><dt>Expected score A</dt><dd id="result-expected">50.00%</dd></div>
+          </dl>
+        </section>
+
+        <section id="share-card-section" class="share-card-section" hidden aria-labelledby="share-card-title">
+          <div class="share-card-copy">
+            <p class="eyebrow">Public artifact preview</p>
+            <h2 id="share-card-title">Share the score, not the history.</h2>
+            <p>This demo card contains only mode, rating effect, Elo ratings, deltas, and protocol labels. It contains no Form inputs, confidence inputs, raw history, names, messages, URLs, contacts, filenames, project names, or private evidence.</p>
+            <div class="card-actions">
+              <button id="download-svg" class="quiet-button" type="button">Download SVG</button>
+              <button id="download-png" class="quiet-button" type="button">Download PNG</button>
+            </div>
+          </div>
+          <div id="share-card-preview" class="share-card-preview" aria-label="Privacy-safe Computer Elo share-card preview"></div>
+        </section>
+
+        <section class="history-section" aria-labelledby="history-title">
+          <div>
+            <p class="eyebrow">Shared in memory</p>
+            <h2 id="history-title">Match trail</h2>
+          </div>
+          <ol id="match-history" class="match-history">
+            <li class="empty-history">Run a duel to start the room trail.</li>
+          </ol>
+        </section>
+
+        <section class="privacy-note">
+          <strong>No raw computer activity enters this server.</strong>
+          <p>Only manual Form, aggregate confidence, mode, compatibility, and the server-owned Elo state are used. No names, messages, receipts, files, or evidence are accepted. Restarting the process erases the room.</p>
+        </section>
+      </main>
+
+      <footer>
+        <span>Elo Ra Kings · Capability-gated LAN preview</span>
+        <span>Self-attested · No identity or anti-cheat layer</span>
+      </footer>
+    </div>
+    <script src="/app.js" defer></script>
+  </body>
+</html>

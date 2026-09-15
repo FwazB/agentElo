@@ -1,0 +1,40 @@
+{
+  "canonical_json_profile": "cej-ascii-integer.v1",
+  "competition_id": "c_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "elo": {
+    "binary": {
+      "formula_version": "computer-elo.binary.v1",
+      "last_match_fingerprint": null,
+      "rated_matches": 0,
+      "rating_milli": 1200000
+    },
+    "scalar": {
+      "formula_version": "computer-elo.scalar-tanh200.v1",
+      "last_match_fingerprint": "sha256:883739ca226628adcda5325b565a3c97d5341f9fc377d1a8d4f694f0718ba26a",
+      "rated_matches": 1,
+      "rating_milli": 1185377
+    }
+  },
+  "fingerprint": "sha256:4033c5b88c5a04d8fbcc7607c00dbb6492a2449a96634dfb6e6c23a867d20702",
+  "form": {
+    "confidence": {
+      "band": "medium",
+      "certainty_ppm": 600000,
+      "coverage_ppm": 750000,
+      "effective_ppm": 600000,
+      "version": "computer-confidence.coverage-certainty-min.v1"
+    },
+    "score": 500,
+    "version": "computer-form.general.v1"
+  },
+  "parent_fingerprint": "sha256:af003cbead322cf6f64635e4827240979fcdbb9fdaa4bb178b7a6774eebb548d",
+  "player_id": "p_22222222222222222222222222222222",
+  "privacy": {
+    "private_evidence_included": false,
+    "raw_activity_included": false
+  },
+  "protocol_version": "computer-elo.protocol.v1",
+  "receipt_type": "player",
+  "schema_version": "1.0.0",
+  "week_id": "2026-W35"
+}
