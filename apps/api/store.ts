@@ -5,6 +5,7 @@ import { LOW_CONFIDENCE_THRESHOLD_PPM, STARTING_RATING_MILLI, type EloMode } fro
 import { parseJsonText } from "../../packages/elo-engine/src/canonical.ts";
 import type { Me, Overview, PlayerView, QueueResult, Standing } from "../../packages/public-api/types.ts";
 import { lastCompletedWeek } from "../../packages/public-api/week.ts";
+import { parseAssessmentContext, type AssessmentContext } from "../../packages/public-api/assessment-context.ts";
 export { lastCompletedWeek } from "../../packages/public-api/week.ts";
 
 export class ApiError extends Error {
@@ -75,6 +76,11 @@ export function createStore(options: StoreOptions) {
       player_id TEXT NOT NULL REFERENCES players(id), week_id TEXT NOT NULL,
       PRIMARY KEY(player_id, week_id)
     );
+    CREATE TABLE IF NOT EXISTS assessment_context (
+      player_id TEXT NOT NULL REFERENCES players(id), week_id TEXT NOT NULL,
+      ai_system TEXT NOT NULL, context_source TEXT NOT NULL,
+      PRIMARY KEY(player_id, week_id)
+    );
     CREATE TABLE IF NOT EXISTS queue (
       id INTEGER PRIMARY KEY, player_id TEXT NOT NULL REFERENCES players(id), week_id TEXT NOT NULL,
       mode TEXT NOT NULL CHECK(mode IN ('scalar','binary')), band TEXT NOT NULL CHECK(band IN ('rated','exhibition')),
@@ -94,7 +100,7 @@ export function createStore(options: StoreOptions) {
     db.exec("CREATE UNIQUE INDEX IF NOT EXISTS players_username ON players(username COLLATE NOCASE)");
     const metadata = db.prepare("SELECT value FROM metadata WHERE key = 'competition_id'").get();
     if (!metadata) {
-      const tables = ["players", "receipts", "imports", "matches", "participation", "form_locks", "queue"];
+      const tables = ["players", "receipts", "imports", "matches", "participation", "form_locks", "queue", "assessment_context"];
       if (tables.some(table => db.prepare(`SELECT 1 FROM ${table} LIMIT 1`).get())) {
         throw new Error("Missing database competition metadata.");
       }
@@ -158,12 +164,17 @@ export function createStore(options: StoreOptions) {
   }
   function playerView(id: string): PlayerView {
     const receipt = current(id);
+    const assessmentContext = receipt ? contextFor(id, receipt.week_id) : undefined;
     const username = db.prepare("SELECT username FROM players WHERE id=?").get(id)!.username as string | null;
     const matches = db.prepare(`SELECT m.id,m.week_id,m.mode,m.receipt,p.week_id AS participation_week_id,p.mode AS participation_mode
       FROM matches m JOIN participation p ON p.match_id=m.id
       WHERE p.player_id=? ORDER BY m.created_at DESC,m.rowid DESC LIMIT 50`).all(id)
       .map(row => storedParticipation(row, id, row.participation_week_id, row.participation_mode));
-    return { player: { id, username, receipt }, matches, usernames: usernamesFor([id], matches) };
+    return { player: { id, username, receipt, ...(assessmentContext ? { assessmentContext } : {}) }, matches, usernames: usernamesFor([id], matches) };
+  }
+  function contextFor(id: string, weekId: string): AssessmentContext | undefined {
+    const row = db.prepare("SELECT ai_system,context_source FROM assessment_context WHERE player_id=? AND week_id=?").get(id, weekId);
+    return row ? parseAssessmentContext({ aiSystem: row.ai_system, contextSource: row.context_source }) : undefined;
   }
   function usernamesFor(ids: string[], matches: MatchReceipt[]): Record<string, string> {
     const participants = [...new Set([...ids, ...matches.flatMap(match => [match.players.a.player_id, match.players.b.player_id])])];
@@ -192,34 +203,43 @@ export function createStore(options: StoreOptions) {
     archive(receipt);
     db.prepare("UPDATE players SET receipt=? WHERE id=?").run(JSON.stringify(receipt), receipt.player_id);
   }
-  function importForm(id: string, value: unknown): Me {
+  function publishForm(id: string, value: unknown, assessmentContext?: AssessmentContext, preserveContextOnOmission = true): Me {
     let source: PlayerReceipt;
     try { source = validatePlayerReceipt(value); }
     catch { throw new ApiError(400, "Invalid public player receipt. Use a valid aggregate-only receipt."); }
     if (source.form.confidence.coverage_ppm === 0 || source.form.confidence.certainty_ppm === 0) {
-      throw new ApiError(422, "Not enough evidence for a score. Ask your AI for the missing evidence before publishing.");
+      throw new ApiError(422, "Not enough context for a score. Try this in a chat with relevant work history.");
     }
     return transaction("importForm", () => {
       if (source.week_id !== week()) throw new ApiError(409, "Use a receipt for the last completed UTC ISO week.");
       const prior = current(id);
-      const row = db.prepare("SELECT import_fingerprint FROM players WHERE id=?").get(id)!;
-      if (row.import_fingerprint === source.fingerprint) return me(id);
-      // Equivalent aggregates never append lineage, even with different client IDs or fingerprints.
-      if (prior?.week_id === source.week_id && prior.form.score === source.form.score &&
+      const sameAggregate = prior?.week_id === source.week_id && prior.form.score === source.form.score &&
           prior.form.confidence.coverage_ppm === source.form.confidence.coverage_ppm &&
-          prior.form.confidence.certainty_ppm === source.form.confidence.certainty_ppm) return me(id);
+          prior.form.confidence.certainty_ppm === source.form.confidence.certainty_ppm;
+      const previousContext = contextFor(id, source.week_id);
+      // Canonical receipt repeats retain labels; assessment omission explicitly opts out.
+      if (sameAggregate && ((assessmentContext === undefined && (preserveContextOnOmission || previousContext === undefined)) ||
+          (assessmentContext !== undefined &&
+          assessmentContext.aiSystem === previousContext?.aiSystem && assessmentContext.contextSource === previousContext.contextSource))) return me(id);
       if (db.prepare("SELECT 1 FROM form_locks WHERE player_id=? AND week_id=?").get(id, source.week_id)) {
         throw new ApiError(409, "This week's Form is locked after entering the queue.");
       }
       const imports = db.prepare("SELECT COUNT(*) AS total FROM imports WHERE player_id=? AND week_id=?").get(id, source.week_id)!;
-      if (Number(imports.total) >= 5) throw new ApiError(429, "This week's five Form updates are used. Try again next week.");
-      const normalized = buildPlayerReceipt({
+      if (Number(imports.total) >= 5) throw new ApiError(429, "This week's five assessment updates are used. Try again next week.");
+      const normalized = sameAggregate ? prior! : buildPlayerReceipt({
         player_id: id, competition_id: competitionId, week_id: source.week_id,
         form_score: source.form.score, coverage_ppm: source.form.confidence.coverage_ppm,
         certainty_ppm: source.form.confidence.certainty_ppm, prior_receipt: prior,
       });
       archive(source);
-      savePlayer(normalized);
+      if (!sameAggregate) savePlayer(normalized);
+      if (assessmentContext) {
+        db.prepare(`INSERT INTO assessment_context(player_id,week_id,ai_system,context_source) VALUES (?,?,?,?)
+          ON CONFLICT(player_id,week_id) DO UPDATE SET ai_system=excluded.ai_system,context_source=excluded.context_source`)
+          .run(id, source.week_id, assessmentContext.aiSystem, assessmentContext.contextSource);
+      } else {
+        db.prepare("DELETE FROM assessment_context WHERE player_id=? AND week_id=?").run(id, source.week_id);
+      }
       db.prepare("INSERT INTO imports(player_id,week_id,source_fingerprint,result_fingerprint) VALUES (?,?,?,?)")
         .run(id, source.week_id, source.fingerprint, normalized.fingerprint);
       db.prepare("UPDATE players SET import_fingerprint=? WHERE id=?").run(source.fingerprint, id);
@@ -284,8 +304,13 @@ export function createStore(options: StoreOptions) {
         return me(id);
       });
     },
-    importForm,
-    assessment(id: string, value: { weekId: unknown; formScore: unknown; coveragePpm: unknown; certaintyPpm: unknown }): Me {
+    importForm(id: string, value: unknown): Me { return publishForm(id, value); },
+    assessment(id: string, value: { weekId: unknown; formScore: unknown; coveragePpm: unknown; certaintyPpm: unknown; aiSystem?: unknown; contextSource?: unknown }): Me {
+      let assessmentContext: AssessmentContext | undefined;
+      if (Object.hasOwn(value, "aiSystem") || Object.hasOwn(value, "contextSource")) {
+        try { assessmentContext = parseAssessmentContext({ aiSystem: value.aiSystem, contextSource: value.contextSource }); }
+        catch { throw new ApiError(400, "Invalid assessment context."); }
+      }
       if (typeof value.weekId !== "string" || typeof value.formScore !== "number" ||
           typeof value.coveragePpm !== "number" || typeof value.certaintyPpm !== "number") {
         throw new ApiError(400, "Invalid assessment. Use a UTC ISO week and whole-number scores and confidence.");
@@ -295,7 +320,7 @@ export function createStore(options: StoreOptions) {
         source = buildPlayerReceipt({ player_id: id, competition_id: competitionId, week_id: value.weekId,
           form_score: value.formScore, coverage_ppm: value.coveragePpm, certainty_ppm: value.certaintyPpm });
       } catch { throw new ApiError(400, "Invalid assessment. Use a UTC ISO week and whole-number scores and confidence."); }
-      return importForm(id, source);
+      return publishForm(id, source, assessmentContext, false);
     },
     joinQueue(id: string, mode: EloMode): QueueResult {
       return transaction("joinQueue", () => {

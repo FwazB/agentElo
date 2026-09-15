@@ -193,10 +193,14 @@ test("mounted score flow previews, clears stale/insufficient results, discards, 
   const assessmentPrompt = copied.at(-1)!;
   assert.match(assessmentPrompt, /authorize/);
   assert.match(assessmentPrompt, new RegExp(weekId));
-  for (const [dimension, weight] of [["Output and closure", 30], ["Focus and attention", 25], ["Workflow leverage", 20], ["Verification discipline", 15], ["Operational hygiene", 10]] as const) {
-    assert.ok(assessmentPrompt.includes(`${dimension}, ${weight}%`), `The copied prompt must include ${dimension} and its weight`);
+  for (const dimension of [/output and closure \(30%\)/i, /focus and attention \(25%\)/i, /tools, automation, delegation and reuse \(20%\)/i, /verification and checks \(15%\)/i, /organization, privacy and recoverability \(10%\)/i]) {
+    assert.match(assessmentPrompt, dimension, "The copied prompt must include every dimension and weight");
   }
-  assert.match(assessmentPrompt, /wait/i);
+  assert.match(assessmentPrompt, /direct estimate/i);
+  assert.match(assessmentPrompt, /do not ask follow-up questions/i);
+  assert.match(assessmentPrompt, /"aiSystem"/);
+  assert.match(assessmentPrompt, /"contextSource"/);
+  assert.doesNotMatch(dialog().textContent!, /answer.*questions|Copy follow-up/i);
   assert.equal(dialog().querySelector<HTMLTextAreaElement>('[aria-label="Full assessment prompt with evidence requirements"]')!.value, assessmentPrompt);
   const cases = [
     score,
@@ -212,19 +216,12 @@ test("mounted score flow previews, clears stale/insufficient results, discards, 
     assert.equal(writes().length, 0);
     if ("status" in candidate && candidate.missing.length === 2 && candidate.missing[1] === "verification") {
       assert.equal(dialog().querySelector(".receipt-preview"), null, "Insufficient evidence must clear the previous score preview");
-      assert.match(dialog().querySelector(".insufficient-result")!.textContent!, /same AI chat/);
-      await press("Copy follow-up");
-      const followUp = copied.at(-1)!;
-      assert.match(followUp, new RegExp(weekId));
-      assert.match(followUp, /focus/i);
-      assert.match(followUp, /verification/i);
-      assert.match(followUp, /wait/i);
-      const targetedContext = followUp.split("\n\n", 1)[0]!;
-      assert.match(targetedContext, /attention and task switching/i);
-      assert.match(targetedContext, /what you checked/i);
-      assert.doesNotMatch(targetedContext, /outcomes you completed|kept work organized/i, "The continuation should ask about the missing areas only");
-      assert.equal(dialog().querySelector<HTMLTextAreaElement>('[aria-label="Targeted evidence follow-up prompt"]')!.value, followUp);
-      assert.notEqual(followUp, assessmentPrompt, "Recovery should target the missing evidence instead of restarting the generic prompt");
+      assert.match(dialog().querySelector(".insufficient-result")!.textContent!, /existing chat/);
+      await press("Copy direct prompt");
+      const directPrompt = copied.at(-1)!;
+      assert.equal(directPrompt, assessmentPrompt);
+      assert.equal(dialog().querySelector<HTMLTextAreaElement>('[aria-label="Direct assessment retry prompt"]')!.value, directPrompt);
+      assert.equal(hasButton("Copy follow-up"), false);
       assert.equal(hasButton("Publish my score"), false);
       assert.equal(writes().length, 0);
     }
@@ -399,4 +396,76 @@ test("closing a hash modal preserves the router's existing history state", async
   assert.equal(view(), "help"); await escape();
   assert.deepEqual(win.history.state, { preserved: "router-state" });
   assert.equal(win.location.hash, "");
+});
+
+
+test("AI context labels are previewed before publication, can be omitted, and reset for a new result", async () => {
+  const scoredWithContext = { ...score, aiSystem: "chatgpt", contextSource: "saved_memory" };
+  handler = request => {
+    if (request.url === "/api/assessment") {
+      const next = player("local_player", true);
+      return Response.json({ ...next, player: { ...next.player,
+        ...(request.body.aiSystem ? { assessmentContext: { aiSystem: request.body.aiSystem, contextSource: request.body.contextSource } } : {}) } });
+    }
+  };
+  await mount(); await press("Rate my week", win.document); await review(scoredWithContext);
+  const metadata = () => dialog().querySelector(".assessment-context-preview")!;
+  assert.match(metadata().textContent!, /ChatGPT/);
+  assert.match(metadata().textContent!, /saved memory/i);
+  assert.match(metadata().textContent!, /labels will also be public/);
+  assert.equal(byId<HTMLInputElement>("include-assessment-context").checked, true);
+  assert.equal(writes().length, 0);
+  await click(byId("include-assessment-context"));
+  assert.match(metadata().textContent!, /will not be published/);
+  assert.match(dialog().querySelector(".preview-stats")!.textContent!, /849/);
+  assert.match(dialog().querySelector(".preview-stats")!.textContent!, /43%/);
+  assert.equal(writes().length, 0);
+  await press("Publish my score");
+  assert.deepEqual(writes().at(-1)!.body, score);
+  assert.equal(view(), "share");
+  assert.equal(dialog().querySelector(".assessment-context-caption"), null);
+
+  await escape(); await press("Rate my week", win.document); await review(scoredWithContext);
+  assert.equal(byId<HTMLInputElement>("include-assessment-context").checked, true);
+  await click(byId("include-assessment-context")); await press("Discard");
+  assert.equal(dialog().querySelector(".assessment-context-preview"), null);
+  await review(scoredWithContext);
+  assert.equal(byId<HTMLInputElement>("include-assessment-context").checked, true);
+  await click(byId("include-assessment-context"));
+  await type("assessment-json", JSON.stringify({ ...scoredWithContext, aiSystem: "claude" }));
+  assert.equal(dialog().querySelector(".assessment-context-preview"), null);
+  await press("Preview my result");
+  assert.equal(byId<HTMLInputElement>("include-assessment-context").checked, true);
+  assert.match(metadata().textContent!, /Claude/);
+  assert.equal(writes().length, 1);
+  await press("Publish my score");
+  assert.deepEqual(writes().at(-1)!.body, { ...scoredWithContext, aiSystem: "claude" });
+  assert.match(dialog().querySelector(".assessment-context-caption")!.textContent!, /Claude/);
+});
+
+test("unknown assessment labels are safe and unexpected metadata never becomes publishable", async () => {
+  await mount(); await press("Rate my week", win.document);
+  await review({ ...score, aiSystem: "unknown", contextSource: "unknown" });
+  assert.match(dialog().querySelector(".assessment-context-preview")!.textContent!, /unknown/i);
+  for (const invalid of [
+    { ...score, aiSystem: "chatgpt" },
+    { ...score, contextSource: "saved_memory" },
+    { ...score, aiSystem: "PRIVATE_CANARY", contextSource: "saved_memory" },
+    { ...score, aiSystem: "chatgpt", contextSource: "PRIVATE_CANARY" },
+    { ...score, aiSystem: "chatgpt", contextSource: "saved_memory", notes: "PRIVATE_CANARY" },
+  ]) {
+    await review(invalid);
+    assert.equal(hasButton("Publish my score"), false);
+    assert.equal(dialog().querySelector(".assessment-context-preview"), null);
+    assert.doesNotMatch(dialog().querySelector(".notice")!.textContent!, /PRIVATE_CANARY/);
+  }
+  assert.equal(writes().length, 0);
+  const publicPlayer = player("alice", true);
+  handler = request => request.url === "/api/users/alice" ? Response.json({ ...publicPlayer, player: {
+    ...publicPlayer.player, assessmentContext: { aiSystem: "PRIVATE_CANARY", contextSource: "__proto__" },
+  } }) : undefined;
+  await escape(); await rerender({ initialProfile: { username: "alice" } });
+  const caption = dialog().querySelector(".assessment-context-caption")!;
+  assert.match(caption.textContent!, /unknown/i);
+  assert.doesNotMatch(caption.textContent!, /PRIVATE_CANARY|__proto__/);
 });

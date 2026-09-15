@@ -43,6 +43,7 @@ async function stopBackend() {
   } finally { const current = store; store = undefined; current?.close(); }
 }
 const savedTokens: string[] = [];
+const privateCanaries = ["PRIVATE_NOTE_CANARY", "PRIVATE_METADATA_CANARY"];
 type Client = { username: string; token: string; cookie: string; id: string };
 async function call(path: string, status: number, client?: Client, value?: unknown, method = value === undefined ? "GET" : "POST", extra: Record<string, string> = {}) {
   const response = await fetch(base + path, { method, headers: { origin: base, "content-type": "application/json", ...(client ? { cookie: client.cookie } : {}), ...extra }, ...(value === undefined ? {} : { body: typeof value === "string" ? value : JSON.stringify(value) }), signal: AbortSignal.timeout(16000), redirect: "error" });
@@ -56,7 +57,7 @@ function secureCookie(response: Response): string {
   return header.split(";")[0]!;
 }
 function privateAbsent(text: string) {
-  for (const secret of [serviceKey, ...savedTokens]) assert.ok(!text.includes(secret), "A private test key reached public content");
+  for (const secret of [serviceKey, ...savedTokens, ...privateCanaries]) assert.ok(!text.includes(secret), "Private test content reached a public response");
 }
 async function createClient(username: string): Promise<Client> {
   const token = randomBytes(32).toString("hex"); savedTokens.push(token);
@@ -122,7 +123,49 @@ try {
     const published = await (await call("/api/assessment", 200, client, assessment(score))).json();
     validatePlayerReceipt(published.player.receipt);
     assert.equal(published.player.receipt.form.score, score);
+    assert.equal(published.player.assessmentContext, undefined);
   }
+  const initialReceipt = (await (await call("/api/me", 200, alice)).json()).player.receipt;
+  const context = { aiSystem: "codex", contextSource: "activity_records" };
+  const labelledAssessment = { ...assessment(870), ...context };
+  const labelled = await (await call("/api/assessment", 200, alice, labelledAssessment)).json();
+  assert.deepEqual(labelled.player.assessmentContext, context);
+  validatePlayerReceipt(labelled.player.receipt);
+  assert.deepEqual(labelled.player.receipt, initialReceipt, "Adding labels must not change receipt math or fingerprint");
+  for (const path of [`/api/users/${alice.username}`, `/api/players/${alice.id}`]) {
+    const text = await (await call(path, 200)).text(); privateAbsent(text);
+    const visible = JSON.parse(text);
+    assert.deepEqual(visible.player.assessmentContext, context);
+    assert.deepEqual(visible.player.receipt, initialReceipt);
+  }
+  const initialArchive = await (await call(`/api/receipts/${encodeURIComponent(initialReceipt.fingerprint)}`, 200)).json();
+  assert.deepEqual(initialArchive, initialReceipt, "Optional labels must remain outside canonical receipts");
+  for (const invalid of [
+    { ...labelledAssessment, aiSystem: "PRIVATE_METADATA_CANARY" },
+    { ...labelledAssessment, contextSource: "PRIVATE_METADATA_CANARY" },
+    { ...labelledAssessment, aiSystem: { notes: "PRIVATE_METADATA_CANARY" } },
+    { ...assessment(870), aiSystem: "codex" },
+    { ...labelledAssessment, notes: "PRIVATE_METADATA_CANARY" },
+  ]) {
+    const response = await call("/api/assessment", 400, alice, invalid);
+    privateAbsent(await response.text());
+  }
+  const unchangedPublicText = await (await call(`/api/users/${alice.username}`, 200)).text(); privateAbsent(unchangedPublicText);
+  const unchangedPublic = JSON.parse(unchangedPublicText);
+  assert.deepEqual(unchangedPublic.player.assessmentContext, context);
+  assert.deepEqual(unchangedPublic.player.receipt, initialReceipt);
+
+  const optedOut = await (await call("/api/assessment", 200, alice, assessment(870))).json();
+  assert.equal(optedOut.player.assessmentContext, undefined, "The four-field opt-out must clear labels even when its score is identical");
+  assert.deepEqual(optedOut.player.receipt, initialReceipt);
+  for (const path of ["/api/me", `/api/users/${alice.username}`, `/api/players/${alice.id}`]) {
+    const visible = await (await call(path, 200, path === "/api/me" ? alice : undefined)).json();
+    assert.equal(visible.player.assessmentContext, undefined);
+    assert.deepEqual(visible.player.receipt, initialReceipt);
+  }
+  await call("/api/assessment", 200, alice, labelledAssessment);
+  pass("four/six-field assessment compatibility, public AI/context labels, same-score opt-out, private metadata rejection and unchanged receipts");
+
   const before = await (await call("/api/me", 200, alice)).json();
   const attack = await call("/api/assessment", 400, alice, { ...assessment(999), playerId: bob.id });
   privateAbsent(await attack.text());
