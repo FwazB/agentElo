@@ -149,14 +149,14 @@ export function createReferenceMcp(config: ReferenceMcpConfig) {
     const server = new McpServer({ name: "computer-elo-reference", version: "1.0.0" }, { capabilities: { tools: { listChanged: false } } });
     const annotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
     server.registerTool("get_scoring_guide", {
-      description: "Read the public Computer Elo rubric and evidence requirements. Provides no personal activity, score, account access, or publishing capability.",
+      description: "Read the public Computer Elo rubric and evidence requirements for gathering context before a final assessment. Provides no personal activity, score, account access, new source permissions, or publishing capability.",
       inputSchema: z.strictObject({}), annotations,
     }, async () => {
       const guide = getScoringGuide(now());
       return { content: [{ type: "text", text: JSON.stringify(guide) }], structuredContent: guide };
     });
     server.registerTool("get_assessment_prompt", {
-      description: "Read the prompt for assessing the last completed UTC week using evidence the user authorizes their own assistant to access. With insufficient evidence, ask for missing examples; do not invent a score. Accepts no personal inputs and publishes nothing.",
+      description: "Read the prompt for assessing the last completed UTC week. First review relevant already-shared or explicitly authorized dated evidence; a rich recap can support all five dimensions. For gaps, ask at most three targeted normal-language questions and wait, without terminal JSON. Resume after the reply. Return terminal insufficient evidence only if the user explicitly finalizes without enough evidence, or declines or cannot provide more after follow-up; never invent a score. Grants no new source permissions, accepts no personal inputs, and publishes nothing.",
       inputSchema: z.strictObject({}), annotations,
     }, async () => {
       const guide = getScoringGuide(now());

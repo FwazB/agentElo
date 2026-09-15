@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildAssessmentPrompt, buildQuickPrompt, getScoringGuide, parseAssessmentResult, renderScoringGuide } from "../../../packages/public-api/scoring-guide.ts";
+import { buildAssessmentPrompt, buildEvidenceFollowUpPrompt, buildQuickPrompt, getScoringGuide, MISSING_EVIDENCE, parseAssessmentResult, renderScoringGuide } from "../../../packages/public-api/scoring-guide.ts";
 import { completedWeekWindow } from "../../../packages/public-api/week.ts";
 
 test("reference uses the completed UTC week across year and Monday boundaries", () => {
@@ -19,6 +19,36 @@ test("link, full reference and prompt share an evidence-first no-publication con
   assert.match(guide.prompt, /Zero coverage or zero certainty means no score/);
   assert.match(guide.prompt, /not a zero or an average/);
   assert.match(guide.prompt, /Do not upload or publish anything/);
+});
+
+test("assessment instructions gather context before emitting final result JSON", () => {
+  const prompt = buildAssessmentPrompt("2026-W37");
+  assert.match(prompt, /full rubric is included below/);
+  assert.match(prompt, /First review relevant dated evidence I already shared/);
+  assert.match(prompt, /A single concrete, dated recap or conversation can be enough/);
+  assert.match(prompt, /Give me 3–6 bullets about 2026-W37/);
+  for (const text of [prompt, buildQuickPrompt("2026-W37")]) {
+    assert.match(text, /wait for my reply and continue/);
+    assert.match(text, /Do not return result JSON while gathering evidence/);
+    assert.doesNotMatch(text, /ask me for the missing evidence and return insufficient_evidence/);
+  }
+  assert.match(prompt, /Only if I ask to finish without enough evidence, decline the follow-up, or cannot supply the remaining context after a follow-up/);
+  assert.match(prompt, /Do not drop unsupported dimensions or reweight the rubric/);
+});
+
+test("every bounded missing category produces a targeted, self-contained continuation", () => {
+  for (const code of Object.keys(MISSING_EVIDENCE)) {
+    const result = parseAssessmentResult({ status: "insufficient_evidence", weekId: "2026-W37", missing: [code] }, "2026-W37");
+    assert.ok("status" in result);
+    const prompt = buildEvidenceFollowUpPrompt(result);
+    const [followUp] = prompt.split("Use this complete rubric:");
+    assert.match(followUp!, /Continue my Computer Elo assessment for 2026-W37/);
+    assert.ok(followUp!.includes(MISSING_EVIDENCE[code as keyof typeof MISSING_EVIDENCE]));
+    for (const [otherCode, label] of Object.entries(MISSING_EVIDENCE)) if (otherCode !== code) assert.ok(!followUp!.includes(label));
+    assert.match(followUp!, /wait for my reply and continue/);
+    assert.match(followUp!, /Do not just repeat the insufficient_evidence JSON/);
+    assert.ok(prompt.endsWith(buildAssessmentPrompt("2026-W37")));
+  }
 });
 
 test("insufficient evidence is a bounded local outcome with no score or free text", () => {
