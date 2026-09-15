@@ -2,9 +2,11 @@ import { createHash } from "node:crypto";
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { getScoringGuide, GUIDE_VERSION } from "../../../packages/public-api/scoring-guide.ts";
+import { getEntryGuide } from "../../../packages/public-api/entry-guide.ts";
 
 const MAX_BODY = 16_384;
-const TOOLS = new Set(["get_scoring_guide", "get_assessment_prompt"]);
+const TOOLS = new Set(["get_scoring_guide", "get_assessment_prompt", "get_entry_prompt"]);
+const PROMPTS = new Set(["assess_week", "prepare_antislop_entry"]);
 const METHODS: Record<string, readonly string[]> = {
   initialize: ["protocolVersion", "capabilities", "clientInfo", "_meta"],
   "notifications/initialized": ["_meta"],
@@ -12,6 +14,8 @@ const METHODS: Record<string, readonly string[]> = {
   "server/discover": ["_meta"],
   "tools/list": ["cursor", "_meta"],
   "tools/call": ["name", "arguments", "_meta"],
+  "prompts/list": ["cursor", "_meta"],
+  "prompts/get": ["name", "arguments", "_meta"],
 };
 const HEADERS = {
   "Cache-Control": "no-store",
@@ -70,9 +74,10 @@ function admitted(value: unknown): value is Record<string, unknown> {
   if (typeof value.method !== "string" || !Object.hasOwn(METHODS, value.method)) return false;
   if (Object.hasOwn(value, "id") && !(typeof value.id === "string" && value.id.length <= 128) && !(typeof value.id === "number" && Number.isSafeInteger(value.id))) return false;
   if (value.params !== undefined && (!record(value.params) || Object.keys(value.params).some(key => !METHODS[value.method as string]!.includes(key)))) return false;
-  if (value.method === "tools/call") {
+  if (value.method === "tools/call" || value.method === "prompts/get") {
     const params = value.params;
-    if (!record(params) || typeof params.name !== "string" || !TOOLS.has(params.name)) return false;
+    const names = value.method === "tools/call" ? TOOLS : PROMPTS;
+    if (!record(params) || typeof params.name !== "string" || !names.has(params.name)) return false;
     if (params.arguments !== undefined && (!record(params.arguments) || Object.keys(params.arguments).length !== 0)) return false;
   }
   return true;
@@ -146,7 +151,9 @@ export function createReferenceMcp(config: ReferenceMcpConfig) {
   // A bounded per-instance backstop. Vercel WAF supplies the separate edge rate limit.
   const clients = new Map<string, { count: number; expires: number }>();
   const handler = createMcpHandler(() => {
-    const server = new McpServer({ name: "computer-elo-reference", version: "1.0.0" }, { capabilities: { tools: { listChanged: false } } });
+    const server = new McpServer({ name: "computer-elo-reference", version: "1.1.0" }, {
+      capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } },
+    });
     const annotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
     server.registerTool("get_scoring_guide", {
       description: "Read the public Computer Elo rubric, direct-estimate rules, and fixed AI product/context-source labels. Provides no personal activity or assessment, account access, new source permissions, or publishing capability.",
@@ -162,6 +169,22 @@ export function createReferenceMcp(config: ReferenceMcpConfig) {
       const guide = getScoringGuide(now());
       return { content: [{ type: "text", text: guide.prompt }], structuredContent: { version: GUIDE_VERSION, weekId: guide.weekId, start: guide.start, end: guide.end, prompt: guide.prompt } };
     });
+    server.registerTool("get_entry_prompt", {
+      title: "Prepare an AntiSlop entry",
+      description: "Read the public prompt and rolling seven-day window for preparing an AntiSlop work-entry draft in your own assistant. Use only existing authorized context. Returns instructions, not an assessment or verdict. Accepts no evidence or personal inputs, assigns no score, grants no consent, and never submits an entry, calls the referee, or publishes anything. Review the draft on the site before submission.",
+      inputSchema: z.strictObject({}), annotations,
+    }, async () => {
+      const guide = getEntryGuide(now());
+      return { content: [{ type: "text", text: guide.prompt }], structuredContent: guide };
+    });
+    server.registerPrompt("assess_week", {
+      title: "Rate my completed week",
+      description: "Prepare a weekly Computer Form estimate from existing authorized context for review on the site. Does not publish a score or provide history access.",
+    }, () => ({ messages: [{ role: "user", content: { type: "text", text: getScoringGuide(now()).prompt } }] }));
+    server.registerPrompt("prepare_antislop_entry", {
+      title: "Prepare my AntiSlop entry",
+      description: "Prepare a rolling seven-day work-entry draft from existing authorized context for review on the site. Does not grant consent, submit evidence, invoke the referee, or assign a score.",
+    }, () => ({ messages: [{ role: "user", content: { type: "text", text: getEntryGuide(now()).prompt } }] }));
     return server;
   }, { legacy: "stateless", responseMode: "json", maxSubscriptions: 0, onerror: () => {} });
 

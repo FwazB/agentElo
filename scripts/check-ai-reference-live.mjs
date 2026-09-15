@@ -6,6 +6,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { Client, StreamableHTTPClientTransport } from "../apps/public/node_modules/@modelcontextprotocol/client/dist/index.mjs";
 import { getScoringGuide, PUBLIC_SITE_URL, renderScoringGuide } from "../packages/public-api/scoring-guide.ts";
+import { getEntryGuide, ENTRY_DRAFT_VERSION, renderEntryGuide } from "../packages/public-api/entry-guide.ts";
 
 const started = new Date();
 const origin = new URL(process.env.AI_REFERENCE_URL ?? PUBLIC_SITE_URL);
@@ -14,7 +15,8 @@ assert.equal(origin.username + origin.password + origin.search + origin.hash, ""
 assert.equal(origin.pathname, "/", "Use a deployment origin without a path.");
 const output = new URL(process.env.AI_REFERENCE_REPORT ?? "../artifacts/ai-reference/live-after.json", import.meta.url);
 const expectedGuide = getScoringGuide(started);
-const expectedTools = ["get_assessment_prompt", "get_scoring_guide"];
+const expectedTools = ["get_assessment_prompt", "get_entry_prompt", "get_scoring_guide"];
+const expectedPrompts = ["assess_week", "prepare_antislop_entry"];
 const checks = [];
 const requests = [];
 const sha256 = text => createHash("sha256").update(text).digest("hex");
@@ -78,22 +80,39 @@ await check("connection instructions and AI index expose the public reference li
   const index = await fetchPublic("/llms.txt");
   assert.equal(index.status, 200);
   const text = await boundedText(index, 16_384);
-  assert.ok(text.includes("/rate.md") && text.includes("/connect") && text.includes("/mcp"));
+  assert.ok(text.includes("/rate.md") && text.includes("/entry.md") && text.includes("/connect") && text.includes("/mcp"));
   assert.match(text, /No evidence means no score/);
   return { connect: connect.status, index: index.status, indexSha256: sha256(text) };
 });
 
+await check("plain-text entry reference uses the canonical rolling-window prompt", async () => {
+  const response = await fetchPublic("/entry.md");
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") ?? "", /text\/plain/);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  const text = await boundedText(response, 32_768);
+  const endsAt = /^Window: .+ inclusive to (.+) exclusive$/m.exec(text)?.[1];
+  assert.ok(endsAt);
+  assert.ok(Math.abs(Date.now() - Date.parse(endsAt)) < 60_000, "Entry reference window must be fresh.");
+  assert.equal(text, renderEntryGuide(new Date(endsAt)));
+  return { status: response.status, draftVersion: ENTRY_DRAFT_VERSION, sha256: sha256(text) };
+});
+
 for (const mode of ["auto", "legacy"]) {
-  await check(`official MCP client completes ${mode === "auto" ? "modern" : "legacy"} discovery and both reference tools`, async () => {
+  await check(`official MCP client completes ${mode === "auto" ? "modern" : "legacy"} discovery and both workflows`, async () => {
     const client = new Client({ name: "computer-elo-live-reference-check", version: "1.0.0" }, { versionNegotiation: { mode } });
     const transport = new StreamableHTTPClientTransport(new URL("/mcp", origin), {
       fetch: async (url, init = {}) => {
         assert.equal(new URL(url).pathname, "/mcp", "MCP requests stay on the reference endpoint.");
         if (init.method === "POST") {
           const message = JSON.parse(String(init.body));
-          assert.ok(["initialize", "notifications/initialized", "server/discover", "tools/list", "tools/call", "ping"].includes(message.method));
+          assert.ok(["initialize", "notifications/initialized", "server/discover", "tools/list", "tools/call", "prompts/list", "prompts/get", "ping"].includes(message.method));
           if (message.method === "tools/call") {
             assert.ok(expectedTools.includes(message.params?.name));
+            assert.deepEqual(message.params?.arguments ?? {}, {});
+          }
+          if (message.method === "prompts/get") {
+            assert.ok(expectedPrompts.includes(message.params?.name));
             assert.deepEqual(message.params?.arguments ?? {}, {});
           }
         } else assert.ok(["GET", "DELETE"].includes(init.method ?? "GET"));
@@ -105,6 +124,7 @@ for (const mode of ["auto", "legacy"]) {
       const era = client.getProtocolEra();
       assert.equal(era, mode === "auto" ? "modern" : "legacy");
       assert.equal(client.getServerCapabilities()?.tools?.listChanged, false);
+      assert.equal(client.getServerCapabilities()?.prompts?.listChanged, false);
       const tools = await client.listTools();
       assert.deepEqual(tools.tools.map(tool => tool.name).sort(), expectedTools);
       for (const tool of tools.tools) {
@@ -119,7 +139,24 @@ for (const mode of ["auto", "legacy"]) {
       assert.equal(prompt?.weekId, expectedGuide.weekId);
       assert.equal(prompt?.prompt, expectedGuide.prompt);
       assert.ok(rateText?.includes(prompt.prompt), "The MCP prompt matches the published text reference.");
-      return { era, tools: expectedTools, guideVersion: guide.version, weekId: guide.weekId, promptSha256: sha256(prompt.prompt) };
+      const entry = (await client.callTool({ name: "get_entry_prompt", arguments: {} })).structuredContent;
+      assert.ok(entry?.window?.endsAt);
+      assert.ok(Math.abs(Date.now() - Date.parse(entry.window.endsAt)) < 60_000);
+      assert.deepEqual(entry, getEntryGuide(new Date(entry.window.endsAt)));
+      const prompts = await client.listPrompts();
+      assert.deepEqual(prompts.prompts.map(prompt => prompt.name).sort(), expectedPrompts);
+      const weekly = await client.getPrompt({ name: "assess_week" });
+      assert.deepEqual(weekly.messages, [{ role: "user", content: { type: "text", text: expectedGuide.prompt } }]);
+      const prepared = await client.getPrompt({ name: "prepare_antislop_entry" });
+      assert.equal(prepared.messages.length, 1);
+      assert.equal(prepared.messages[0].role, "user");
+      assert.equal(prepared.messages[0].content.type, "text");
+      const entryText = prepared.messages[0].content.text;
+      const endsAt = /^Prepare my AntiSlop work entry for the rolling seven days from .+ inclusive to (.+) exclusive\./.exec(entryText)?.[1];
+      assert.ok(endsAt);
+      assert.ok(Math.abs(Date.now() - Date.parse(endsAt)) < 60_000);
+      assert.equal(entryText, getEntryGuide(new Date(endsAt)).prompt);
+      return { era, tools: expectedTools, prompts: expectedPrompts, guideVersion: guide.version, weekId: guide.weekId, promptSha256: sha256(prompt.prompt), entryPromptSha256: sha256(entry.prompt) };
     } finally { await client.close(); }
   });
 }

@@ -17,6 +17,7 @@ import { createStore } from "../apps/api/store.ts";
 import { validateMatchReceipt, validatePlayerReceipt } from "../packages/elo-engine/src/receipts.ts";
 import type { AntiSlopMe, DuelView, OwnedEntry } from "../packages/public-api/antislop.ts";
 import type { ReadyEntryDraft } from "../packages/referee/drafts.ts";
+import { renderEntryGuide } from "../packages/public-api/entry-guide.ts";
 
 const root = resolve(import.meta.dirname, "..");
 const scratch = mkdtempSync(join(tmpdir(), "elo-production-flows-"));
@@ -109,6 +110,17 @@ try {
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   assert.ok(ready, "Compiled Next server did not start");
+  const entryReference = await call("/entry.md", 200);
+  assert.equal(entryReference.headers.get("cache-control"), "no-store");
+  const entryText = await entryReference.text();
+  const entryEnd = /^Window: .+ inclusive to (.+) exclusive$/m.exec(entryText)?.[1];
+  assert.ok(entryEnd);
+  assert.equal(entryText, renderEntryGuide(new Date(entryEnd)));
+  // The compiled production route rejects this test server's untrusted loopback
+  // authority. Accepted modern/legacy sessions are covered by the SDK tests; the
+  // live reference check exercises the deployed public authority separately.
+  await call("/mcp", 403, undefined, { jsonrpc: "2.0", id: 1, method: "prompts/list" });
+  pass("compiled canonical entry reference and MCP authority boundary");
   const firstOverview = await (await call("/api/overview", 200)).json();
   const weekId = firstOverview.weekId;
   assert.equal(firstOverview.stats.players, 0);

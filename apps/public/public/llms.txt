@@ -3,6 +3,7 @@
 Computer Elo is a self-attested weekly computer-use game. The prompt asks for a direct estimate from existing authorized context, without follow-up questions. Meaningful partial week context can support a rough score with conservative confidence. Underlying activity stays with the user's own AI; optional public metadata uses only fixed AI product and context-source labels. Public resources provide rules, not computer history or permission to collect it.
 
 - [Current scoring guide](https://antislop.org/rate.md): UTC week, weighted estimates, fixed context labels, privacy boundary, and result JSON. No evidence means no score; no usable target-week context returns that result without questions.
-- [Connect your AI](https://antislop.org/connect): Reference link and optional read-only MCP setup.
-- [MCP endpoint](https://antislop.org/mcp): Public scoring reference only; no account key needed and no write or history-access tools.
+- [AntiSlop entry preparation](https://antislop.org/entry.md): Instructions for preparing an evidence draft from work the user chooses to share. Preparation is not submission, evidence verification, or a rating. Keep drafts with the user for review before sharing.
+- [Connect your AI](https://antislop.org/connect): Setup for Claude web and Desktop, Claude Code, Cursor, VS Code, and other Streamable HTTP MCP clients, plus prompts that work without MCP.
+- [MCP endpoint](https://antislop.org/mcp): Public instructions for both workflows, with no authentication. Tools: get_scoring_guide, get_assessment_prompt, get_entry_prompt. Native prompts: assess_week, prepare_antislop_entry. All take no arguments. No account, write, submission, or history-access tools; never send private evidence as MCP arguments.
 - [League](https://antislop.org): Choose a username, review and publish approved aggregates, and share a card.

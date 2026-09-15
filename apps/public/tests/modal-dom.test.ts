@@ -8,6 +8,7 @@ import { act, createElement, StrictMode } from "react";
 import type { Root } from "react-dom/client";
 import { buildPlayerReceipt } from "../../../packages/elo-engine/src/receipts.ts";
 import type { Me, Overview, PlayerView } from "../../../packages/public-api/types.ts";
+import { PUBLIC_SITE_URL } from "../../../packages/public-api/scoring-guide.ts";
 
 /**
  * Mounted React 19 tests, with actual DOM events, state, effects, and scheduling.
@@ -169,6 +170,62 @@ after(() => {
   globalThis.fetch = originalFetch;
   for (const [key, previous] of replacedGlobals) { if (previous) Object.defineProperty(globalThis, key, previous); else Reflect.deleteProperty(globalThis, key); }
   dom.window.close();
+});
+
+test("connect setup copies working client configurations and both review-only workflow requests", async () => {
+  await mount({ initialDialog: "connect" }, { signedIn: false });
+  assert.equal(view(), "connect");
+  const mcpDetails = byId("mcp-url").closest("details")!;
+  await click(mcpDetails.querySelector("summary")!);
+  const mcpUrl = `${PUBLIC_SITE_URL}/mcp`;
+  assert.equal(byId<HTMLInputElement>("mcp-url").value, mcpUrl);
+  await press("Copy MCP URL");
+  assert.equal(copied.at(-1), mcpUrl);
+  assert.match(mcpDetails.textContent!, /Authentication: none/);
+  assert.match(mcpDetails.textContent!, /Customize → Connectors → \+ → Add custom connector/);
+
+  async function chooseClient(value: string) {
+    const select = byId<HTMLSelectElement>("mcp-client");
+    await act(async () => { select.value = value; select.dispatchEvent(new win.Event("change", { bubbles: true })); });
+  }
+  await chooseClient("claude-code");
+  await press("Copy Claude Code command");
+  assert.equal(copied.at(-1), `claude mcp add --transport http computer-elo ${mcpUrl}`);
+  assert.equal(byId<HTMLTextAreaElement>("claude-code-command").value, copied.at(-1));
+  await chooseClient("cursor");
+  await press("Copy Cursor config");
+  assert.deepEqual(JSON.parse(copied.at(-1)!), { mcpServers: { "computer-elo": { url: mcpUrl } } });
+  await chooseClient("vscode");
+  await press("Copy VS Code config");
+  assert.deepEqual(JSON.parse(copied.at(-1)!), { servers: { "computer-elo": { type: "http", url: mcpUrl } } });
+  await chooseClient("claude-code");
+  assert.ok(hasButton("Copy Claude Code command"), "Changing clients resets the copied state");
+  await chooseClient("other");
+  assert.match(mcpDetails.textContent!, /Streamable HTTP/);
+
+  await press("Copy weekly request");
+  assert.match(copied.at(-1)!, /get_assessment_prompt/);
+  assert.match(copied.at(-1)!, /review before publishing it myself/);
+  await press("Copy entry request");
+  assert.match(copied.at(-1)!, /get_entry_prompt/);
+  assert.match(copied.at(-1)!, /do not submit or publish/);
+  assert.ok(mcpDetails.querySelector('a[href="/entry.md"]'));
+  assert.equal(writes().length, 0, "Copying setup or requests must not submit a score or entry");
+});
+
+test("connector copy failure leaves the command available for manual selection", async () => {
+  await mount({ initialDialog: "connect" }, { signedIn: false });
+  const select = byId<HTMLSelectElement>("mcp-client");
+  await act(async () => { select.value = "claude-code"; select.dispatchEvent(new win.Event("change", { bubbles: true })); });
+  const originalWriteText = win.navigator.clipboard.writeText;
+  win.navigator.clipboard.writeText = async () => { throw new Error("Clipboard denied"); };
+  try {
+    await press("Copy Claude Code command");
+    assert.match(dialog().querySelector('[role="status"]')?.textContent ?? "", /Select and copy the text manually/);
+    assert.equal(byId<HTMLTextAreaElement>("claude-code-command").readOnly, true);
+    assert.match(byId<HTMLTextAreaElement>("claude-code-command").value, /^claude mcp add --transport http/);
+    assert.equal(writes().length, 0);
+  } finally { win.navigator.clipboard.writeText = originalWriteText; }
 });
 
 test("real signup requires saving a key; lost responses preserve it for retry and recovery", async () => {

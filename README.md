@@ -72,6 +72,24 @@ and the player's `antislop.org/u/<username>` link. The profile's social preview
 and downloadable PNG show the personal Form **/1000** and separate Elo rating.
 The player reviews and posts the draft themselves.
 
+## Use Claude or another AI
+
+The public MCP at `https://antislop.org/mcp` serves instructions for
+both weekly Computer Form and AntiSlop evidence entry preparation. Use Streamable
+HTTP with no authentication. It does not read private history or submit results.
+
+```sh
+claude mcp add --transport http computer-elo https://antislop.org/mcp
+```
+
+Get the weekly prompt with `get_assessment_prompt`, or prepare an entry draft
+with `get_entry_prompt`. Native prompts are `assess_week` and
+`prepare_antislop_entry`; all take no arguments. Review the result or draft before
+sharing it. [Client setup](docs/ai-reference.md#connect-a-client) covers Claude web
+and Desktop, Cursor, VS Code, and other remote MCP clients. Without MCP, use
+[/rate.md](https://antislop.org/rate.md) or
+[/entry.md](https://antislop.org/entry.md).
+
 ## Develop
 
 Use Node 24 and install both locked dependency trees:

@@ -22,7 +22,7 @@ After creating the GitHub repository, enable secret scanning/push protection and
 
 Computer Form assessment payloads contain weekly aggregates and optional fixed AI product/context-source labels, not the underlying chat, profile, memory or activity. AntiSlop separately accepts the work recap and evidence excerpts that a player explicitly approves. Those excerpts are private to the player and the referee; a separately approved summary and structured duel result can be public.
 
-The server derives ownership from a hashed bearer credential, uses parameterized SQL and atomic match transactions, and controls rating changes. Same-origin checks protect cookie-authenticated writes. Private uploads and erasure also bind to the player shown when the action was reviewed, preventing another tab's session change from redirecting the action. The public MCP serves reference instructions only: it has no account, evidence-upload, file, arbitrary-URL or referee access. Keep service credentials in server environment variables, never `NEXT_PUBLIC_*` variables.
+The server derives ownership from a hashed bearer credential, uses parameterized SQL and atomic match transactions, and controls rating changes. Same-origin checks protect cookie-authenticated writes. Private uploads and erasure also bind to the player shown when the action was reviewed, preventing another tab's session change from redirecting the action. The public MCP provides three reference tools and two preparation prompts with no account, evidence-upload, entry-submission, file, arbitrary-URL or referee access. All take no arguments. Keep service credentials in server environment variables, never `NEXT_PUBLIC_*` variables.
 
 ## Private AntiSlop data
 

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { createReferenceMcp, type ReferenceMcpConfig } from "../lib/mcp.ts";
 import { getScoringGuide } from "../../../packages/public-api/scoring-guide.ts";
+import { getEntryGuide } from "../../../packages/public-api/entry-guide.ts";
 
 const date = new Date("2026-09-14T12:00:00Z");
 const config: ReferenceMcpConfig = { allowedHosts: ["elo.test"], allowedOrigins: ["https://elo.test"], now: () => date };
@@ -15,7 +16,7 @@ function request(body: unknown = list, headers: Record<string, string> = {}): Re
 }
 
 for (const mode of ["auto", "legacy"] as const) {
-  test(`official SDK client discovers and calls only two reference tools (${mode})`, async () => {
+  test(`official SDK client discovers both preparation workflows through tools and prompts (${mode})`, async () => {
     const reference = createReferenceMcp(config);
     const client = new Client({ name: "reference-test", version: "1.0.0" }, { versionNegotiation: { mode } });
     const transport = new StreamableHTTPClientTransport(new URL("https://elo.test/mcp"), {
@@ -25,8 +26,9 @@ for (const mode of ["auto", "legacy"] as const) {
       await client.connect(transport);
       assert.equal(client.getProtocolEra(), mode === "auto" ? "modern" : "legacy");
       assert.equal(client.getServerCapabilities()?.tools?.listChanged, false);
+      assert.equal(client.getServerCapabilities()?.prompts?.listChanged, false);
       const tools = await client.listTools();
-      assert.deepEqual(tools.tools.map(tool => tool.name).sort(), ["get_assessment_prompt", "get_scoring_guide"]);
+      assert.deepEqual(tools.tools.map(tool => tool.name).sort(), ["get_assessment_prompt", "get_entry_prompt", "get_scoring_guide"]);
       for (const tool of tools.tools) {
         assert.equal(tool.annotations?.readOnlyHint, true);
         assert.equal(tool.annotations?.openWorldHint, false);
@@ -39,18 +41,34 @@ for (const mode of ["auto", "legacy"] as const) {
       assert.equal(prompt.structuredContent?.weekId, "2026-W37");
       assert.equal(prompt.structuredContent?.prompt, getScoringGuide(date).prompt);
       assert.match(JSON.stringify(prompt), /insufficient_evidence/);
+      const entry = await client.callTool({ name: "get_entry_prompt", arguments: {} });
+      assert.deepEqual(entry.structuredContent, getEntryGuide(date));
+      assert.deepEqual(entry.content, [{ type: "text", text: getEntryGuide(date).prompt }]);
+      const prompts = await client.listPrompts();
+      assert.deepEqual(prompts.prompts.map(prompt => prompt.name).sort(), ["assess_week", "prepare_antislop_entry"]);
+      for (const prompt of prompts.prompts) assert.deepEqual(prompt.arguments ?? [], []);
+      for (const [name, text] of [["assess_week", getScoringGuide(date).prompt], ["prepare_antislop_entry", getEntryGuide(date).prompt]]) {
+        for (const args of [undefined, {}]) {
+          const prepared = await client.getPrompt({ name: name!, ...(args ? { arguments: args } : {}) });
+          assert.deepEqual(prepared.messages, [{ role: "user", content: { type: "text", text } }]);
+        }
+      }
     } finally { await client.close(); await reference.close(); }
   });
 }
 
-test("legacy initialize has no session or cookie, and standalone streams are unsupported", async () => {
+for (const version of ["2025-03-26", "2025-06-18", "2025-11-25"]) test(`legacy ${version} initialize has no session or cookie, and standalone streams are unsupported`, async () => {
   const reference = createReferenceMcp(config);
   try {
     const response = await reference.fetch(request({ jsonrpc: "2.0", id: 1, method: "initialize", params: {
-      protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "legacy-test", version: "1.0.0" },
+      protocolVersion: version, capabilities: {}, clientInfo: { name: "legacy-test", version: "1.0.0" },
     } }));
     assert.equal(response.status, 200);
-    assert.match(await response.text(), /2025-11-25/);
+    const text = await response.text();
+    const data = response.headers.get("content-type")?.includes("text/event-stream")
+      ? text.split("\n").find(line => line.startsWith("data:"))!.slice(5).trim()
+      : text;
+    assert.equal(JSON.parse(data).result.protocolVersion, version);
     assert.equal(response.headers.get("mcp-session-id"), null);
     assert.equal(response.headers.get("set-cookie"), null);
     for (const method of ["GET", "DELETE", "PUT", "PATCH", "OPTIONS"]) {
@@ -90,6 +108,14 @@ test("batches, unknown methods, private fields and all tool arguments get fixed 
       { ...list, method: "tools/call", params: { name: "get_scoring_guide", arguments: { history: secret } } },
       { ...list, method: "tools/call", params: { name: "get_assessment_prompt", arguments: { recoveryKey: secret } } },
       { ...list, method: "tools/call", params: { name: "get_assessment_prompt", arguments: [], history: secret } },
+      { ...list, method: "tools/call", params: { name: "get_entry_prompt", arguments: { evidence: secret } } },
+      { ...list, method: "prompts/list", params: { history: secret } },
+      { ...list, method: "prompts/get", params: { name: secret } },
+      { ...list, method: "prompts/get", params: { name: "get_entry_prompt" } },
+      { ...list, method: "tools/call", params: { name: "prepare_antislop_entry" } },
+      { ...list, method: "prompts/get", params: { name: "prepare_antislop_entry", arguments: { history: secret } } },
+      { ...list, method: "prompts/get", params: { name: "assess_week", arguments: { recoveryKey: secret } } },
+      { ...list, method: "prompts/get", params: { name: "prepare_antislop_entry", arguments: [], history: secret } },
     ]) {
       const response = await reference.fetch(request(body));
       assert.equal(response.status, 400);
